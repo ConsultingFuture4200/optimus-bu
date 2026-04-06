@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: Ready to execute
-stopped_at: Completed 01-shell-scaffold-02-PLAN.md
-last_updated: "2026-04-06T22:53:40.199Z"
+status: Phase complete — ready for verification
+stopped_at: Checkpoint 01-03 Task 3 — awaiting human verification of shell scaffold
+last_updated: "2026-04-06T23:13:37.303Z"
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -48,6 +48,7 @@ Plan: 3 of 3
 *Updated after each plan completion*
 | Phase 01-shell-scaffold P01 | 15 | 2 tasks | 7 files |
 | Phase 01-shell-scaffold P02 | 35 | 2 tasks | 8 files |
+| Phase 01-shell-scaffold P03 | 520 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [Phase 01-shell-scaffold]: PluginShell requires 'use client' in Next.js 15 App Router — next/dynamic with ssr:false is prohibited in Server Components
 - [Phase 01-shell-scaffold]: react-grid-layout v2 Layout type is readonly LayoutItem[] — useState<Layout> not useState<Layout[]>
 - [Phase 01-shell-scaffold]: useContainerWidth(measureBeforeMount: true) provides mounted flag directly — no separate useState(false) needed for hydration guard
+- [Phase 01-shell-scaffold]: Used getSession() wrapper from @/lib/auth for workspaces API route (matches existing ops/route.ts pattern)
+- [Phase 01-shell-scaffold]: isInitialLoad.current set in .finally() of load fetch — auto-save never fires with default before server layout resolves
+- [Phase 01-shell-scaffold]: migrateWorkspace() called on PUT (save) as well as GET (load) for forward-compatibility on both paths
 
 ### Pending Todos
 
@@ -79,6 +83,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-06T22:53:40.195Z
-Stopped at: Completed 01-shell-scaffold-02-PLAN.md
+Last session: 2026-04-06T23:13:37.298Z
+Stopped at: Checkpoint 01-03 Task 3 — awaiting human verification of shell scaffold
 Resume file: None

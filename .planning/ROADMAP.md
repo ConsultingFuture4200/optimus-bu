@@ -12,7 +12,7 @@ Brownfield rebuild of 16 fixed Next.js 15 pages into a composable plugin-host wo
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Shell Scaffold** - Build the plugin grid harness with error boundaries, workspace schema, and SSE safety foundation
+- [x] **Phase 1: Shell Scaffold** - Build the plugin grid harness with error boundaries, workspace schema, and SSE safety foundation (completed 2026-04-06)
 - [ ] **Phase 2: Data Provider Layer** - Build all 10 typed SWR hooks, 3 mutation hooks, and real-time SSE invalidation
 - [ ] **Phase 3: Core Plugins** - Build all 12 plugins (P0 safety-critical first, then P1/P2/P3)
 - [ ] **Phase 4: Command Palette, Presets, and Mobile** - Add keyboard navigation, workspace presets, and mobile breakpoint behavior
@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
 - [x] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
-- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
+- [x] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 **UI hint**: yes
 
 ### Phase 2: Data Provider Layer
@@ -48,8 +48,8 @@ Plans:
   4. If SSE is disconnected, REST polling at 30s interval keeps data current — HALT status never goes stale
 **Plans**: 3 plans
 Plans:
-- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
-- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [x] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [x] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
 - [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 
 ### Phase 3: Core Plugins
@@ -107,7 +107,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Shell Scaffold | 2/3 | In Progress|  |
+| 1. Shell Scaffold | 3/3 | Complete   | 2026-04-06 |
 | 2. Data Provider Layer | 0/TBD | Not started | - |
 | 3. Core Plugins | 0/TBD | Not started | - |
 | 4. Command Palette, Presets, and Mobile | 0/TBD | Not started | - |
