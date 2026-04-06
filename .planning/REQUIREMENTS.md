@@ -1,122 +1,207 @@
-# Requirements: Optimus Spec Compliance Audit
+# Requirements: Board Workstation Plugin Rebuild
 
-**Defined:** 2026-04-01
-**Core Value:** Every claim in SPEC.md is either implemented in code or explicitly marked as a future phase — no silent gaps.
+**Defined:** 2026-04-05
+**Core Value:** The board's operational control surface works reliably through composable plugins — and every future feature drops in as a plugin instead of restructuring a monolith.
 
 ## v1 Requirements
 
-Requirements for Phase 1 exit board review. Each maps to roadmap phases.
+### Shell Infrastructure
 
-### Foundations
+- [ ] **SHELL-01**: Plugin shell renders draggable/resizable grid panes via react-grid-layout
+- [ ] **SHELL-02**: Plugin registry loads all plugins at build time (compile-time imports, no runtime loading)
+- [ ] **SHELL-03**: Plugin lifecycle calls onActivate() when pane opens and onDeactivate() when closed
+- [ ] **SHELL-04**: React error boundary per plugin pane — crash shows error card with retry, does not affect adjacent plugins
+- [ ] **SHELL-05**: Error boundaries handle async errors via useErrorBoundary hook (not just render errors)
+- [ ] **SHELL-06**: Layout serializes to JSON and restores from JSON exactly (round-trip fidelity)
+- [ ] **SHELL-07**: Grid shell uses `ssr: false` / dynamic import with mounted guard to prevent hydration mismatch
+- [ ] **SHELL-08**: Shell loads in < 2s on desktop, < 3s on mobile
+- [ ] **SHELL-09**: Plugin activation time < 500ms per plugin
 
-- [ ] **FOUN-01**: Design principles P1-P6 each have at least one verifiable infrastructure enforcement point
-- [ ] **FOUN-02**: Cross-schema foreign key count is zero across all five schemas (agent_graph, inbox, voice, signal, content)
-- [ ] **FOUN-03**: pg_notify is the coordination event bus — Redis is used only for caching, not agent coordination
-- [ ] **FOUN-04**: state_transitions and edit_deltas have active triggers preventing UPDATE and DELETE
-- [ ] **FOUN-05**: Phase 1 vs Phase 2 scope boundary is formalized from CONCERNS.md and ADR-018 before any code changes
+### Command Palette
 
-### Agent Governance
+- [ ] **CMD-01**: Cmd+K / Ctrl+K opens command palette, Escape closes
+- [ ] **CMD-02**: Fuzzy search over workspace names, plugin names, and recent draft subjects
+- [ ] **CMD-03**: HALT command present and functional (calls existing HALT API endpoint)
+- [ ] **CMD-04**: Command palette responsive < 100ms from keystroke to results
+- [ ] **CMD-05**: Command palette works on mobile (tap activation, not just keyboard)
 
-- [ ] **AGOV-01**: All agents in agents.json map to a valid SPEC §2 tier with correct model assignment (Strategist/Opus, Architect/Sonnet, Orchestrator/Sonnet, Reviewer/Sonnet, Executor/Haiku)
-- [ ] **AGOV-02**: Orchestrator agents have explicit can_assign_to lists (no globs)
-- [ ] **AGOV-03**: Executor agents cannot initiate tasks — no code path allows work_item creation without orchestrator
-- [ ] **AGOV-04**: Strategist agents have no deploy or infrastructure-modification tools
+### Workspace Persistence
 
-### Task Graph
+- [ ] **WKSP-01**: Save current layout to named workspace in Postgres (board.workspaces table)
+- [ ] **WKSP-02**: Load workspace restores exact grid layout + per-plugin configs
+- [ ] **WKSP-03**: 5 preset workspaces seeded (Daily Ops, Pipeline, Governance, Command, Cost Review)
+- [ ] **WKSP-04**: Workspace switcher in shell sidebar
+- [ ] **WKSP-05**: Workspaces are per-member; presets are shared
+- [ ] **WKSP-06**: Workspace schema includes schemaVersion field for future migration safety
 
-- [ ] **TASK-01**: Work item state transitions follow the legal sequence: created → assigned → in_progress → review → completed, with terminal states completed and cancelled
-- [ ] **TASK-02**: Illegal state transitions are blocked by DB constraints, not just application code
-- [ ] **TASK-03**: Failed tasks retry up to 3 times, then escalate — verified in reaper.js
-- [ ] **TASK-04**: DAG edges have no orphans or cycles in agent_graph.edges
+### Data Providers
 
-### Guardrails
+- [ ] **DATA-01**: 10 typed React hooks (useDrafts, usePipeline, useSignals, useAgents, useCost, useGovernance, useSystemStatus, useAuditLog, useKnowledge, useTodayBrief)
+- [ ] **DATA-02**: Each hook returns { data, loading, error, refetch }
+- [ ] **DATA-03**: Write providers expose named action functions (approveDraft, rejectDraft, etc.), not generic setters
+- [ ] **DATA-04**: All write actions POST to existing API endpoints — dashboard never writes directly to Postgres
+- [ ] **DATA-05**: SSE endpoint at /api/events subscribes to Redis channels and pushes to browser
+- [ ] **DATA-06**: SSE client reconnects automatically with exponential backoff
+- [ ] **DATA-07**: REST polling fallback (30s interval) when SSE disconnects
+- [ ] **DATA-08**: Real-time update visible in dashboard < 3s after brain state change
+- [ ] **DATA-09**: All 10 providers return data matching direct API calls (100% accuracy)
+- [ ] **DATA-10**: SSE route uses `new Response(stream)` with `X-Accel-Buffering: no` header (not NextResponse)
 
-- [ ] **GUAR-01**: All 7 constitutional gates (G1-G7) exist in gates.json AND have active enforcement code paths in guard-check.js
-- [ ] **GUAR-02**: Every state transition call site in agent-loop.js passes a transaction client to guardCheck(), ensuring atomic execution with transition_state()
-- [ ] **GUAR-03**: JWT issuer, signing, and verification functions exist and work (initializeJwtKeys, issueToken, verifyToken)
-- [ ] **GUAR-04**: withAgentScope() validates JWT signature before setting app.agent_id via set_config
-- [ ] **GUAR-05**: RLS policies are active (not just defined) on agent-scoped tables — enforcement status mapped against ADR-018
+### Core Plugins — P0 (Safety-Critical)
 
-### Integrity
+- [ ] **PLG-01**: Approval Queue plugin — approve, reject, edit drafts with identical behavior to existing page
+- [ ] **PLG-02**: Approval Queue renders correctly at default size and when resized (responsive within pane)
+- [ ] **PLG-03**: Approval Queue handles loading/error states (skeleton, error card with retry)
+- [ ] **PLG-04**: Approval Queue fully usable at 375px mobile width without horizontal scrolling
+- [ ] **PLG-05**: HALT Control plugin — trigger HALT and resume via existing API endpoints
+- [ ] **PLG-06**: HALT Control reachable within 2 keystrokes from any workspace
+- [ ] **PLG-07**: HALT Control never depends solely on SSE state — always has polling fallback for current status
 
-- [ ] **INTG-01**: Full verify_all_ledger_chains() passes for all recent work items — zero broken hash links
-- [ ] **INTG-02**: Hash chain computation in state-machine.js matches the SQL verify_ledger_chain() function
-- [ ] **INTG-03**: spec-drift-detector.js is active and has fired within its expected schedule
-- [ ] **INTG-04**: All three audit tiers (Tier 1 hourly, Tier 2 daily, Tier 3 48h) ran within expected windows
+### Core Plugins — P1
 
-### Compliance Synthesis
+- [ ] **PLG-08**: Today Brief plugin — aggregates from today, drafts, signals providers
+- [ ] **PLG-09**: Agent Status plugin — real-time agent health extracted from Pipeline page
+- [ ] **PLG-10**: Pipeline plugin — task funnel view with agent data
 
-- [ ] **COMP-01**: Phase 1 exit criteria gap map produced — full pass/fail table against SPEC §14
-- [ ] **COMP-02**: Every finding classified as CURRENT-IMPLEMENTED, CURRENT-PARTIAL, TARGET-FUTURE, or CLAIMED-INCOMPLETE
-- [ ] **COMP-03**: All identified spec violations have been fixed with atomic commits referencing the relevant SPEC section
-- [ ] **COMP-04**: Documentation updated to reflect actual implementation state accurately
+### Core Plugins — P2
+
+- [ ] **PLG-11**: Signal Feed plugin — signal feed from existing page
+- [ ] **PLG-12**: Cost Tracker plugin — read-only cost charts via recharts
+- [ ] **PLG-13**: Governance plugin — gate config + constitutional compliance view with write capability
+- [ ] **PLG-14**: Audit Log plugin — read-only table with filters
+
+### Core Plugins — P3
+
+- [ ] **PLG-15**: CLI Workstation plugin — xterm.js terminal wrapped as plugin
+- [ ] **PLG-16**: DAG Visualization plugin — active DAG view per SPEC §8, uses pipeline data
+- [ ] **PLG-17**: Knowledge Base plugin — RAG doc management migrated from legacy inbox dashboard
+
+### Plugin Standards (All Plugins)
+
+- [ ] **PSTD-01**: Every plugin defines a manifest (id, name, version, category, dataDependencies, defaultSize, mobileSupported)
+- [ ] **PSTD-02**: Every plugin renders correctly at default size and when resized
+- [ ] **PSTD-03**: Every plugin handles loading state and error state
+- [ ] **PSTD-04**: Plugin boilerplate < 50 lines per plugin (kill criterion)
+- [ ] **PSTD-05**: All features from replaced pages are present and functional (feature parity)
+
+### Mobile
+
+- [ ] **MOBL-01**: At < 768px viewport, shell switches to single-plugin full-screen view
+- [ ] **MOBL-02**: Swipe or tab-bar navigation between active plugins on mobile
+- [ ] **MOBL-03**: Drag/resize disabled at mobile breakpoint (touch conflict prevention)
+
+### Legacy Decommission
+
+- [ ] **DECOM-01**: inbox-dashboard service removed from compose.yml and compose.prod.yml
+- [ ] **DECOM-02**: inbox.staqs.io redirects to board.staqs.io (Railway domain config)
+- [ ] **DECOM-03**: No broken references in CLAUDE.md, README.md, or ONBOARDING.md
+- [ ] **DECOM-04**: autobot-inbox/dashboard/ directory removed from repo
+
+### Deployment
+
+- [ ] **DEPLOY-01**: board.staqs.io serves plugin dashboard on Railway
+- [ ] **DEPLOY-02**: All 12 plugins load and function in production
+- [ ] **DEPLOY-03**: Approve a real draft through the new dashboard (end-to-end verification)
+- [ ] **DEPLOY-04**: Trigger and resume HALT through the new dashboard (end-to-end verification)
+- [ ] **DEPLOY-05**: SSE updates visible within 3s of brain state change in production
 
 ## v2 Requirements
 
-Deferred to security hardening pass (v1.x). Tracked but not in current roadmap.
+### Deferred Features
 
-### Security Hardening
-
-- **SECR-01**: Token revocation gap quantified — exposure window documented, in-memory blocklist recommended
-- **SECR-02**: Permission grants scanned for resource_id wildcards — over-broad grants flagged
-- **SECR-03**: Linear webhook HMAC fallback classified as P1 violation with remediation path
-- **SECR-04**: Hash chain JS/SQL parity test written and passing — cross-implementation verification
-- **SECR-05**: Completeness check absence documented — which executors produce unvalidated outputs
-
-### Behavioral Audit
-
-- **BEHV-01**: Prompt-to-code fidelity deep trace — every agent constraint traced to code enforcement
-- **BEHV-02**: Autonomy level enforcement verified against L0 exit conditions
-- **BEHV-03**: Adversarial sanitization test suite run and compared against baseline
+- **CHAT-01**: board-query utility agent as embedded chat plugin (optimus.board-query)
+- **THEME-01**: Dark mode / theme switching
+- **NOTIF-01**: Browser push notifications for state transitions
+- **SHARE-01**: Cross-member workspace sharing (currently per-member only)
+- **RUNTIME-01**: Runtime plugin loading (dynamic imports from URL)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| External integration testing (Gmail, Linear, Slack) | Operational testing, not spec compliance — different discipline |
-| Compliance score/percentage | Reduces nuanced severity to gameable number — severity-tiered gap table instead |
-| Voice profile embedding quality evaluation | Product quality concern, not spec compliance — audit checks G3 enforcement exists |
-| Code style standardization | Project constraint: only fix spec violations, not style preferences |
-| Phase 2+ target architecture as failures | Per ADR-018, items like per-agent DB roles and token revocation are explicitly Phase 2 |
-| Re-running tier2-ai-auditor.js | Already runs daily — reference last run results instead |
-| Auto-fixing security boundaries without board review | CLAUDE.md and ADR-002 require board review for security boundary decisions |
+| New API layer or database | Brain connection already exists at port 3001 (PRD §1) |
+| Runtime plugin loading | All plugins first-party, compile-time only (PRD §5.3) |
+| Plugin sandboxing (iframes/workers) | Plugins run in same React tree — no trust boundary needed (PRD Task 1.1) |
+| Changes to agent runtime / gates G1-G8 | Untouched by this rebuild (PRD §1) |
+| Vercel deployment redirect | Pending board decision BD-3, separate from this project |
+| next-auth v5 upgrade | Still beta, gratuitous scope creep (research) |
+| Tailwind v4 upgrade | Breaking config changes, no value for this rebuild (research) |
+| RBAC / user management | Only 2 board members, existing NextAuth sufficient (research) |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FOUN-05 | Phase 1 | Pending |
-| FOUN-01 | Phase 2 | Pending |
-| FOUN-02 | Phase 2 | Pending |
-| FOUN-03 | Phase 2 | Pending |
-| FOUN-04 | Phase 2 | Pending |
-| GUAR-01 | Phase 3 | Pending |
-| GUAR-02 | Phase 3 | Pending |
-| GUAR-03 | Phase 3 | Pending |
-| GUAR-04 | Phase 3 | Pending |
-| GUAR-05 | Phase 3 | Pending |
-| AGOV-01 | Phase 4 | Pending |
-| AGOV-02 | Phase 4 | Pending |
-| AGOV-03 | Phase 4 | Pending |
-| AGOV-04 | Phase 4 | Pending |
-| TASK-01 | Phase 4 | Pending |
-| TASK-02 | Phase 4 | Pending |
-| TASK-03 | Phase 4 | Pending |
-| TASK-04 | Phase 4 | Pending |
-| INTG-01 | Phase 5 | Pending |
-| INTG-02 | Phase 5 | Pending |
-| INTG-03 | Phase 5 | Pending |
-| INTG-04 | Phase 5 | Pending |
-| COMP-01 | Phase 6 | Pending |
-| COMP-02 | Phase 6 | Pending |
-| COMP-03 | Phase 6 | Pending |
-| COMP-04 | Phase 6 | Pending |
+| SHELL-01 | Phase 1 | Pending |
+| SHELL-02 | Phase 1 | Pending |
+| SHELL-03 | Phase 1 | Pending |
+| SHELL-04 | Phase 1 | Pending |
+| SHELL-05 | Phase 1 | Pending |
+| SHELL-06 | Phase 1 | Pending |
+| SHELL-07 | Phase 1 | Pending |
+| SHELL-08 | Phase 1 | Pending |
+| SHELL-09 | Phase 1 | Pending |
+| CMD-01 | TBD | Pending |
+| CMD-02 | TBD | Pending |
+| CMD-03 | TBD | Pending |
+| CMD-04 | TBD | Pending |
+| CMD-05 | TBD | Pending |
+| WKSP-01 | TBD | Pending |
+| WKSP-02 | TBD | Pending |
+| WKSP-03 | TBD | Pending |
+| WKSP-04 | TBD | Pending |
+| WKSP-05 | TBD | Pending |
+| WKSP-06 | TBD | Pending |
+| DATA-01 | TBD | Pending |
+| DATA-02 | TBD | Pending |
+| DATA-03 | TBD | Pending |
+| DATA-04 | TBD | Pending |
+| DATA-05 | TBD | Pending |
+| DATA-06 | TBD | Pending |
+| DATA-07 | TBD | Pending |
+| DATA-08 | TBD | Pending |
+| DATA-09 | TBD | Pending |
+| DATA-10 | TBD | Pending |
+| PLG-01 | TBD | Pending |
+| PLG-02 | TBD | Pending |
+| PLG-03 | TBD | Pending |
+| PLG-04 | TBD | Pending |
+| PLG-05 | TBD | Pending |
+| PLG-06 | TBD | Pending |
+| PLG-07 | TBD | Pending |
+| PLG-08 | TBD | Pending |
+| PLG-09 | TBD | Pending |
+| PLG-10 | TBD | Pending |
+| PLG-11 | TBD | Pending |
+| PLG-12 | TBD | Pending |
+| PLG-13 | TBD | Pending |
+| PLG-14 | TBD | Pending |
+| PLG-15 | TBD | Pending |
+| PLG-16 | TBD | Pending |
+| PLG-17 | TBD | Pending |
+| PSTD-01 | TBD | Pending |
+| PSTD-02 | TBD | Pending |
+| PSTD-03 | TBD | Pending |
+| PSTD-04 | TBD | Pending |
+| PSTD-05 | TBD | Pending |
+| MOBL-01 | TBD | Pending |
+| MOBL-02 | TBD | Pending |
+| MOBL-03 | TBD | Pending |
+| DECOM-01 | TBD | Pending |
+| DECOM-02 | TBD | Pending |
+| DECOM-03 | TBD | Pending |
+| DECOM-04 | TBD | Pending |
+| DEPLOY-01 | TBD | Pending |
+| DEPLOY-02 | TBD | Pending |
+| DEPLOY-03 | TBD | Pending |
+| DEPLOY-04 | TBD | Pending |
+| DEPLOY-05 | TBD | Pending |
 
 **Coverage:**
-- v1 requirements: 26 total
-- Mapped to phases: 26
-- Unmapped: 0 ✓
+- v1 requirements: 55 total
+- Mapped to phases: 9 (SHELL-01 through SHELL-09)
+- Unmapped: 46 (to be mapped by roadmapper)
 
 ---
-*Requirements defined: 2026-04-01*
-*Last updated: 2026-04-01 after roadmap creation*
+*Requirements defined: 2026-04-05*
+*Last updated: 2026-04-05 after initial definition*
