@@ -16,8 +16,8 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": true,
-    "auto_advance": false,
+    "nyquist_validation": false,
+    "auto_advance": true,
     "node_repair": true,
     "node_repair_budget": 2,
     "ui_phase": true,
@@ -31,5 +31,5 @@
     "context_warnings": true
   },
   "mode": "yolo",
-  "granularity": "standard"
+  "granularity": "coarse"
 }
