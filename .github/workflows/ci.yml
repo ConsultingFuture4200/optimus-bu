@@ -1,0 +1,172 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22]
+    defaults:
+      run:
+        working-directory: autobot-inbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: autobot-inbox/package-lock.json
+      - run: npm ci
+      - name: Install lib dependencies
+        working-directory: lib
+        run: npm ci
+      - run: npm run test:ci
+
+  migrate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: autobot-inbox
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: autobot-inbox/package-lock.json
+      - run: npm ci
+      - name: Install lib dependencies
+        working-directory: lib
+        run: npm ci
+      - run: npm run migrate
+
+  config-isolation:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check config isolation
+        run: |
+          # Board-tier paths from CODEOWNERS that agents must not mix with their own changes
+          BOARD_PATHS="autobot-inbox/config/ autobot-inbox/.env CODEOWNERS CLAUDE.md spec/ board/ .github/"
+
+          # Infrastructure files are tier-neutral — they naturally span board and agent
+          # tiers (e.g., Docker Compose references services from both tiers). These are
+          # excluded from isolation checks but still require standard review.
+          is_infra() {
+            case "$1" in
+              compose.yml|compose.prod.yml|compose.*.yml) return 0 ;;
+              .dockerignore|.env.example) return 0 ;;
+              */Dockerfile|*/Dockerfile.*) return 0 ;;
+              */.dockerignore) return 0 ;;
+              */.env.example) return 0 ;;
+              docs-site/*) return 0 ;;
+              lib/*) return 0 ;;
+              package.json|package-lock.json) return 0 ;;
+              */test/*|*/test-*|*test.js|*test.ts) return 0 ;;
+              board/src/components/*) return 0 ;;
+            esac
+            return 1
+          }
+
+          # Get changed files in this PR
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          BOARD_FILES=""
+          OTHER_FILES=""
+          INFRA_FILES=""
+
+          for file in $CHANGED; do
+            if is_infra "$file"; then
+              INFRA_FILES="$INFRA_FILES $file"
+              continue
+            fi
+            is_board=false
+            for bp in $BOARD_PATHS; do
+              case "$file" in
+                ${bp}*) is_board=true; break ;;
+              esac
+            done
+            if [ "$is_board" = true ]; then
+              BOARD_FILES="$BOARD_FILES $file"
+            else
+              OTHER_FILES="$OTHER_FILES $file"
+            fi
+          done
+
+          if [ -n "$INFRA_FILES" ]; then
+            echo "Infrastructure files (tier-neutral):"
+            for f in $INFRA_FILES; do echo "  - $f"; done
+            echo ""
+          fi
+
+          if [ -n "$BOARD_FILES" ] && [ -n "$OTHER_FILES" ]; then
+            echo "::error::Config isolation violation: PR mixes board-tier and agent-tier files."
+            echo ""
+            echo "Board-tier files:"
+            for f in $BOARD_FILES; do echo "  - $f"; done
+            echo ""
+            echo "Other files:"
+            for f in $OTHER_FILES; do echo "  - $f"; done
+            echo ""
+            echo "Split into separate PRs: one for board-tier changes (requires board approval),"
+            echo "one for agent-tier changes."
+            exit 1
+          fi
+
+          if [ -n "$BOARD_FILES" ]; then
+            echo "PR touches board-tier paths only — CODEOWNERS will require board approval."
+          elif [ -n "$OTHER_FILES" ]; then
+            echo "PR touches agent-tier paths only — config isolation check passed."
+          else
+            echo "PR touches infrastructure files only — config isolation check passed."
+          fi
+
+  smoke:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    needs: [test, migrate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Railway preview deploy
+        run: sleep 30
+      - name: Smoke test critical endpoints
+        run: |
+          BASE_URL="https://preview.staqs.io"
+          FAILED=0
+
+          for endpoint in /api/status /api/campaigns /api/stats /api/briefing; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$BASE_URL$endpoint" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✓ $endpoint → $STATUS"
+            else
+              echo "✗ $endpoint → $STATUS"
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" = "1" ]; then
+            echo ""
+            echo "::warning::Some endpoints failed smoke test. Railway preview may still be deploying."
+          fi
+
+  secret-detection:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}

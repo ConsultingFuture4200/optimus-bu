@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "nemoclaw": {
+      "command": "node",
+      "args": ["/Users/ericgang/Optimus/tools/nemoclaw-mcp/index.js"],
+      "env": {
+        "OPTIMUS_TOKEN": "${OPTIMUS_TOKEN}",
+        "OPTIMUS_API_URL": "${OPTIMUS_API_URL}"
+      }
+    }
+  }
+}

@@ -1,0 +1,44 @@
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+  content: ["./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        surface: {
+          DEFAULT: "#0a0a0f",
+          raised: "#12121a",
+          overlay: "#1a1a25",
+          selected: "#1a1a2e",
+        },
+        accent: {
+          DEFAULT: "#6366f1",
+          dim: "#4f46e5",
+          bright: "#818cf8",
+        },
+      },
+      animation: {
+        "fade-in": "fadeIn 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+        "slide-in": "slideIn 200ms cubic-bezier(0.4, 0, 0.2, 1)",
+      },
+      keyframes: {
+        fadeIn: {
+          "0%": { opacity: "0" },
+          "100%": { opacity: "1" },
+        },
+        slideIn: {
+          "0%": { transform: "translateX(-100%)" },
+          "100%": { transform: "translateX(0)" },
+        },
+        shimmer: {
+          "0%": { transform: "translateX(-100%)" },
+          "50%": { transform: "translateX(200%)" },
+          "100%": { transform: "translateX(-100%)" },
+        },
+      },
+    },
+  },
+  plugins: [require("@tailwindcss/typography")],
+};
+
+export default config;

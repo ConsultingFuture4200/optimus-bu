@@ -1,0 +1,704 @@
+{
+  "agents": {
+    "orchestrator": {
+      "id": "orchestrator",
+      "type": "orchestrator",
+      "tier": "Orchestrator",
+      "subTier": "core",
+      "enabled": true,
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "llmEnabled": true,
+      "maxTokens": 2048,
+      "temperature": 0.1,
+      "tools": ["channel_poll", "message_fetch", "task_create", "task_assign"],
+      "pollInterval": 60,
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": ["executor-intake", "executor-triage", "executor-responder", "reviewer", "strategist", "executor-ticket", "executor-coder"],
+        "reportsTo": "board",
+        "escalatesTo": "strategist"
+      },
+      "capabilities": ["channel-polling", "task-management", "pipeline-coordination"],
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 1.00,
+        "chatTools": []
+      }
+    },
+    "strategist": {
+      "id": "strategist",
+      "type": "strategist",
+      "tier": "Strategist",
+      "subTier": "core",
+      "enabled": true,
+      "model": "google/gemini-2.5-pro",
+      "maxTokens": 4096,
+      "temperature": 0.5,
+      "tools": ["task_read", "message_fetch", "signal_query", "voice_query", "governance_submit"],
+      "mode": "suggest",
+      "guardrails": ["G1", "G7"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["priority-scoring", "signal-analysis", "voice-analysis", "strategy", "governance-submit"],
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 2.00,
+        "chatTools": ["signal_query"]
+      },
+      "skipFor": ["fyi", "noise"]
+    },
+    "executor-intake": {
+      "id": "executor-intake",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "intake",
+      "enabled": true,
+      "intake": true,
+      "model": "claude-haiku-4-5-20251001",
+      "maxTokens": 2000,
+      "temperature": 0.2,
+      "tools": ["task_read"],
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["request-classification", "multi-channel-intake"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "classification": {
+        "complexityLevels": ["TRIVIAL", "MODERATE", "COMPLEX", "SPECIALIZED"],
+        "confidenceThresholdDirectResolve": 4,
+        "confidenceThresholdRoute": 3,
+        "spotCheckRate": 1.0,
+        "routeTrivialThroughReviewer": true
+      },
+      "contextBudget": {
+        "maxTokensPerTask": 2000,
+        "strategy": "request_only"
+      },
+      "behavioralContract": "config/agents/triage-01.agents.md"
+    },
+    "executor-triage": {
+      "id": "executor-triage",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "triage",
+      "enabled": true,
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "maxTokens": 2048,
+      "temperature": 0.2,
+      "tools": ["message_fetch", "task_update", "signal_extract"],
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["message-classification", "signal-extraction"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      }
+    },
+    "executor-responder": {
+      "id": "executor-responder",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "responder",
+      "enabled": true,
+      "model": "claude-haiku-4-5-20251001",
+      "maxTokens": 4096,
+      "temperature": 0.7,
+      "tools": ["message_fetch", "voice_query", "proposal_create"],
+      "guardrails": ["G1", "G2", "G3", "G5"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["message-drafting", "voice-matching", "proposal-creation"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      }
+    },
+    "reviewer": {
+      "id": "reviewer",
+      "type": "reviewer",
+      "tier": "Reviewer",
+      "subTier": "core",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "maxTokens": 4096,
+      "temperature": 0.3,
+      "tools": ["proposal_read", "voice_query", "gate_check"],
+      "guardrails": ["G1", "G2", "G3", "G5", "G6", "G7"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["gate-checking", "voice-analysis", "proposal-review"],
+      "outputConstraints": {
+        "format": "review-report",
+        "antiPatterns": [
+          "Do NOT include self-assessment scores or quality ratings",
+          "Do NOT wrap output in execution reports",
+          "Flag unsolicited content as scope violations — if the deliverable contains content not requested in the task, flag it"
+        ],
+        "reviewDimensions": ["tone-match", "commitment-scan", "reversibility", "scope-compliance"]
+      },
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 1.00,
+        "chatTools": []
+      }
+    },
+    "architect": {
+      "id": "architect",
+      "type": "architect",
+      "tier": "Architect",
+      "subTier": "core",
+      "enabled": true,
+      "model": "google/gemini-2.5-pro",
+      "maxTokens": 8192,
+      "temperature": 0.5,
+      "tools": ["task_read", "signal_query", "stats_query", "briefing_create", "governance_submit"],
+      "guardrails": ["G1"],
+      "schedule": "daily",
+      "scheduleTime": "06:00",
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["signal-analysis", "statistics", "briefing-generation"],
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 1.00,
+        "chatTools": []
+      }
+    },
+    "executor-ticket": {
+      "id": "executor-ticket",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "ticketing",
+      "enabled": true,
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "maxTokens": 4096,
+      "temperature": 0.3,
+      "tools": ["task_read", "ticket_create_linear", "ticket_create_github", "slack_notify"],
+      "guardrails": ["G1", "G2"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["linear-api", "github-api", "slack-api", "ticket-creation"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      }
+    },
+    "executor-research": {
+      "id": "executor-research",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "research",
+      "enabled": true,
+      "model": "google/gemini-2.5-pro",
+      "maxTokens": 8192,
+      "temperature": 0.3,
+      "tools": ["web_search", "web_fetch"],
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["web-search", "web-fetch", "research-synthesis"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "research": {
+        "maxIterationsPerSession": 30,
+        "maxCostPerResearchUsd": 3.00,
+        "searchApiProvider": "brave",
+        "maxConcurrentSearches": 5,
+        "urlFetchTimeoutMs": 15000,
+        "urlMaxChars": 50000
+      }
+    },
+    "executor-coder": {
+      "id": "executor-coder",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "engineering",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "llmEnabled": true,
+      "maxTokens": 8192,
+      "temperature": 0.2,
+      "tools": ["task_read", "claude_code_session", "slack_notify"],
+      "guardrails": ["G1", "G5"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["javascript", "sql", "github-api", "git-trees", "linear-api", "code-generation"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "claudeCode": {
+        "maxBudgetUsd": 50.00,
+        "maxTurns": 200,
+        "sessionTimeoutMs": 1500000,
+        "allowedTools": [
+          "Read", "Edit", "Write", "Glob", "Grep",
+          "Task", "Skill", "ToolSearch",
+          "WebSearch", "WebFetch",
+          "Bash(git *)", "Bash(npm *)", "Bash(npx *)", "Bash(node *)",
+          "Bash(gh pr *)", "Bash(gh issue *)",
+          "Bash(ls *)", "Bash(pwd)"
+        ]
+      }
+    },
+    "executor-blueprint": {
+      "id": "executor-blueprint",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "engineering",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "llmEnabled": true,
+      "maxTokens": 8192,
+      "temperature": 0.3,
+      "tools": ["task_read"],
+      "guardrails": ["G1", "G6"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["code-generation", "architecture-design"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "claudeCode": {
+        "maxBudgetUsd": 5.00,
+        "maxTurns": 30,
+        "allowedTools": ["Read", "Write", "Glob", "Grep", "Bash(node *)"]
+      }
+    },
+    "claw-explorer": {
+      "id": "claw-explorer",
+      "type": "architect",
+      "tier": "Architect",
+      "subTier": "exploration",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "maxTokens": 8192,
+      "temperature": 0.4,
+      "tools": ["fs_read", "db_query", "subprocess_sandboxed", "web_fetch", "intent_create"],
+      "guardrails": ["G1"],
+      "schedule": "exploration",
+      "scheduleInterval": 14400000,
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["filesystem", "database-query", "web-fetch", "subprocess", "exploration"],
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 1.00,
+        "chatTools": []
+      },
+      "exploration": {
+        "maxCyclesPerDay": 6,
+        "maxIterationsPerDomain": 5,
+        "perCycleBudgetUsd": 1.00,
+        "dailyBudgetUsd": 5.00,
+        "cycleTimeoutMs": 1800000,
+        "domainTimeoutMs": 600000,
+        "minCycleIntervalMs": 7200000,
+        "quietHoursStart": 0,
+        "quietHoursEnd": 6
+      }
+    },
+    "claw-campaigner": {
+      "id": "claw-campaigner",
+      "type": "orchestrator",
+      "tier": "Orchestrator",
+      "subTier": "campaign",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "maxTokens": 16384,
+      "temperature": 0.3,
+      "tools": ["llm_invoke", "db_read", "db_write", "subprocess_sandboxed",
+                "fs_read", "fs_write", "git_ops", "intent_create"],
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": ["executor-blender", "executor-veo3", "executor-test"],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["llm-invoke", "database-read", "database-write", "filesystem", "git-ops", "subprocess", "campaign-orchestration"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "claudeCode": {
+        "model": "sonnet",
+        "maxBudgetUsd": 2.00,
+        "maxTurns": 30,
+        "allowedTools": [
+          "Read", "Edit", "Write", "Glob", "Grep",
+          "Bash(git *)", "Bash(npm *)", "Bash(node *)",
+          "Bash(ls *)", "Bash(pwd)"
+        ]
+      },
+      "campaign": {
+        "pollIntervalMs": 30000,
+        "defaultIterationTimeBudget": 300000,
+        "defaultPlateauWindow": 5,
+        "defaultPlateauThreshold": 0.01,
+        "maxConcurrentCampaigns": 2,
+        "worktreeBaseDir": "campaigns/"
+      }
+    },
+    "claw-workshop": {
+      "id": "claw-workshop",
+      "type": "orchestrator",
+      "tier": "Orchestrator",
+      "subTier": "workshop",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "llmEnabled": true,
+      "maxTokens": 8192,
+      "temperature": 0.2,
+      "tools": ["task_read", "claude_code_session", "slack_notify"],
+      "guardrails": ["G1", "G5"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["code-generation", "github-api", "git-ops", "workshop-orchestration", "design-creation", "figma-read"],
+      "claudeCode": {
+        "maxBudgetUsd": 20.00,
+        "maxTurns": 100,
+        "sessionTimeoutMs": 2400000,
+        "allowedTools": [
+          "Read", "Edit", "Write", "Glob", "Grep",
+          "Task", "Skill", "ToolSearch",
+          "WebSearch", "WebFetch",
+          "Bash(git *)", "Bash(npm *)", "Bash(npx *)", "Bash(node *)",
+          "Bash(gh pr *)", "Bash(gh issue *)", "Bash(gh repo create *)",
+          "Bash(ls *)", "Bash(pwd)",
+          "mcp__pencil__batch_design",
+          "mcp__pencil__batch_get",
+          "mcp__pencil__get_screenshot",
+          "mcp__pencil__snapshot_layout",
+          "mcp__pencil__get_editor_state",
+          "mcp__pencil__get_variables",
+          "mcp__pencil__set_variables",
+          "mcp__claude_ai_Figma__get_design_context",
+          "mcp__claude_ai_Figma__get_screenshot",
+          "mcp__claude_ai_Figma__get_metadata",
+          "mcp__claude_ai_Figma__get_variable_defs",
+          "mcp__claude_ai_Figma__get_code_connect_map"
+        ],
+        "mcpServers": {
+          "pencil": {
+            "type": "stdio",
+            "command": "npx",
+            "args": ["-y", "@anthropic-ai/pencil-mcp"],
+            "env": {}
+          }
+        }
+      },
+      "workshop": {
+        "pollIntervalMs": 15000,
+        "maxConcurrentWorkshops": 2,
+        "defaultPlaybook": "implement-feature",
+        "designPlaybook": "design-implement",
+        "autoApprove": true
+      }
+    },
+    "board-query": {
+      "id": "board-query",
+      "type": "utility",
+      "tier": "Utility",
+      "subTier": "query",
+      "enabled": true,
+      "model": "deepseek/deepseek-chat-v3-0324",
+      "maxTokens": 1024,
+      "temperature": 0.3,
+      "tools": [],
+      "guardrails": [],
+      "chat": { "enabled": false }
+    },
+    "campaign-builder": {
+      "id": "campaign-builder",
+      "type": "utility",
+      "tier": "Utility",
+      "subTier": "builder",
+      "enabled": true,
+      "model": "claude-haiku-4-5-20251001",
+      "maxTokens": 2048,
+      "temperature": 0.4,
+      "tools": [],
+      "guardrails": [],
+      "systemPrompt": "You are a campaign specification assistant for Optimus — an AI agent organization that builds software products.\n\nYour job is to help board members define exactly what they want built. Be concise and direct.\n\nWhen a user describes a project, ask 2-3 focused clarifying questions about:\n- Technical requirements (framework, language, hosting)\n- Scope (pages, features, integrations)\n- Design preferences (style, existing brand assets, reference sites)\n- Success criteria (what does \"done\" look like?)\n\nWhen the user uploads files, acknowledge them and incorporate their content into your understanding.\n\nWhen you have enough detail to write a complete specification, output a structured summary:\n\n## Project Specification\n**Name**: ...\n**Tech Stack**: ...\n**Pages/Components**: ...\n**Design**: ...\n**Requirements**: ...\n**Success Criteria**: ...\n\nREADY_TO_BUILD\n\nThe READY_TO_BUILD marker signals the spec is complete. Do NOT include it until you have enough detail. Keep questions focused — don't ask more than needed.",
+      "chat": {
+        "enabled": true,
+        "maxCostPerSession": 0.50,
+        "chatTools": []
+      }
+    },
+    "executor-redesign": {
+      "id": "executor-redesign",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "engineering",
+      "enabled": true,
+      "model": "claude-sonnet-4-6",
+      "llmEnabled": true,
+      "maxTokens": 8192,
+      "temperature": 0.3,
+      "tools": ["task_read", "web_scrape"],
+      "guardrails": ["G1", "G6"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["code-generation", "web-scrape", "image-generation"],
+      "outputConstraints": {
+        "format": "artifact-only",
+        "antiPatterns": [
+          "Do NOT wrap output in execution reports or campaign summaries",
+          "Do NOT include step narration or tool call logs",
+          "Do NOT include self-assessment scores or quality ratings",
+          "Output ONLY the requested deliverable"
+        ]
+      },
+      "claudeCode": {
+        "maxBudgetUsd": 5.00,
+        "maxTurns": 30,
+        "allowedTools": ["Read", "Write", "Glob", "Grep", "Bash(node *)"]
+      },
+      "imagegen": {
+        "enabled": true,
+        "maxImagesPerJob": 4,
+        "maxBudgetUsd": 0.20
+      },
+      "pipeline": {
+        "generate": {
+          "backend": "gemini",
+          "model": "gemini-3-flash-preview",
+          "fallbackModel": "gemini-2.5-flash",
+          "flashModels": ["claude:sonnet"],
+          "maxTurns": 35,
+          "timeoutMs": 1500000,
+          "allowedTools": [
+            "read_file", "write_file", "replace", "glob", "search_file_content",
+            "create_project", "generate_screen_from_text",
+            "get_screen", "list_screens", "edit_screens"
+          ],
+          "extensions": ["stitch"],
+          "allowedMcpServers": ["stitch"]
+        },
+        "review": {
+          "backend": "claude",
+          "maxTurns": 15,
+          "timeoutMs": 300000
+        },
+        "applyFixes": {
+          "backend": "claude",
+          "maxTurns": 20,
+          "timeoutMs": 1200000
+        },
+        "fixRegressions": {
+          "backend": "claude",
+          "maxTurns": 20,
+          "timeoutMs": 300000
+        }
+      }
+    }
+  ,
+    "nemoclaw-ecgang": {
+      "id": "nemoclaw-ecgang",
+      "type": "external",
+      "tier": "External",
+      "subTier": "nemoclaw",
+      "enabled": true,
+      "model": "google/gemini-2.5-pro",
+      "llmEnabled": false,
+      "maxTokens": 8192,
+      "temperature": 0.3,
+      "tools": [],
+      "guardrails": [],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["orchestration", "research", "board-api"],
+      "owner": "ecgang",
+      "description": "Eric's NemoClaw instance (orchestration, research, Board API)"
+    },
+    "nemoclaw-ConsultingFuture4200": {
+      "id": "nemoclaw-ConsultingFuture4200",
+      "type": "external",
+      "tier": "External",
+      "subTier": "nemoclaw",
+      "enabled": true,
+      "model": "google/gemini-2.5-pro",
+      "llmEnabled": false,
+      "maxTokens": 8192,
+      "temperature": 0.3,
+      "tools": [],
+      "guardrails": [],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "board",
+        "escalatesTo": "board"
+      },
+      "capabilities": ["orchestration", "research", "board-api"],
+      "owner": "ConsultingFuture4200",
+      "description": "Dustin's NemoClaw instance"
+    },
+    "issue-triage": {
+      "id": "issue-triage",
+      "type": "executor",
+      "tier": "Executor",
+      "subTier": "triage",
+      "enabled": true,
+      "model": "claude-haiku-4-5-20251001",
+      "maxTokens": 512,
+      "temperature": 0.1,
+      "tools": [],
+      "guardrails": ["G1"],
+      "hierarchy": {
+        "canDelegate": [],
+        "reportsTo": "orchestrator",
+        "escalatesTo": "orchestrator"
+      },
+      "capabilities": ["issue-triage", "auto-assignment"],
+      "description": "Proactively polls Linear/GitHub for unassigned issues, evaluates clarity/feasibility, auto-assigns clear ones to idle runners",
+      "triage": {
+        "pollIntervalMs": 300000,
+        "linearTeamKeys": ["STAQPRO"],
+        "githubOrgs": ["staqsIO", "f8ai"],
+        "githubRepos": [],
+        "maxAgeHours": 720,
+        "autoApproveMinClarity": 4,
+        "autoApproveMaxScope": "M",
+        "maxPerRun": 10
+      }
+    }
+  },
+  "workstation": {
+    "routerModel": "deepseek/deepseek-chat-v3-0324",
+    "expertModel": "google/gemini-2.5-pro",
+    "maxTokens": 4096
+  },
+  "models": {
+    "claude-opus-4-6": {
+      "provider": "anthropic",
+      "inputCostPer1M": 5.00,
+      "outputCostPer1M": 25.00,
+      "contextWindow": 200000,
+      "maxOutput": 128000
+    },
+    "claude-sonnet-4-6": {
+      "provider": "anthropic",
+      "inputCostPer1M": 3.00,
+      "outputCostPer1M": 15.00,
+      "contextWindow": 200000,
+      "maxOutput": 64000
+    },
+    "claude-haiku-4-5-20251001": {
+      "provider": "anthropic",
+      "inputCostPer1M": 1.00,
+      "outputCostPer1M": 5.00,
+      "contextWindow": 200000,
+      "maxOutput": 64000
+    },
+    "deepseek/deepseek-chat-v3-0324": {
+      "provider": "openrouter",
+      "inputCostPer1M": 0.27,
+      "outputCostPer1M": 1.10,
+      "contextWindow": 128000,
+      "maxOutput": 8192
+    },
+    "openai/gpt-4o": {
+      "provider": "openrouter",
+      "inputCostPer1M": 2.50,
+      "outputCostPer1M": 10.00,
+      "contextWindow": 128000,
+      "maxOutput": 16384
+    },
+    "google/gemini-2.5-pro": {
+      "provider": "openrouter",
+      "inputCostPer1M": 1.25,
+      "outputCostPer1M": 10.00,
+      "contextWindow": 1000000,
+      "maxOutput": 65536
+    }
+  }
+}

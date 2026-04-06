@@ -1,0 +1,36 @@
+{
+  "hitl": {
+    "name": "Dustin Powers",
+    "company": "Gummy Co",
+    "email": "Consultingfutures@gmail.com",
+    "role": "Founder & CEO",
+    "industry": "Cannabis edibles manufacturer",
+    "discord": "future4200",
+    "linkedin": "/dustin-powers-10a562182",
+    "context": "Runs a gummy manufacturing operation. Manages supplier relationships, retail/brand partnerships, compliance, and production scheduling."
+  },
+  "senders": [
+    {
+      "id": "steve",
+      "name": "Steve White",
+      "company": "Ingredient Majors",
+      "email": "futureislive4200@gmail.com",
+      "role": "Sales Director",
+      "relationship": "supplier",
+      "discord": "stevewhite0148",
+      "linkedin": "/steve-white-629b563b3",
+      "context": "Supplies bulk ingredients (gelatin, sweeteners, flavoring, CBD/THC distillate) to Gummy Co. Long-standing supplier relationship. Reliable but occasionally has supply chain issues."
+    },
+    {
+      "id": "bob",
+      "name": "Bob Johnson",
+      "company": "CPG Brand Co",
+      "email": "supplyingdemands@gmail.com",
+      "role": "VP of Product",
+      "relationship": "customer",
+      "discord": "bobsyouruncle7108499",
+      "linkedin": "/bob-johnson-80b13514a",
+      "context": "White-label CPG brand that buys finished gummy products from Gummy Co for retail distribution. Demands quality, consistency, and on-time delivery. Growing account."
+    }
+  ]
+}

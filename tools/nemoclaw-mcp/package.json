@@ -1,0 +1,17 @@
+{
+  "name": "nemoclaw-mcp",
+  "version": "1.0.0",
+  "description": "NemoClaw MCP server — Optimus Board API tools for Claude Code",
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "nemoclaw-mcp": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "token": "node issue-token.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}

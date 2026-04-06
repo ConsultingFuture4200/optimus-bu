@@ -1,0 +1,19 @@
+{
+  "title": "Architecture Decision Records",
+  "pages": [
+    "README",
+    "001-metadata-only-email-storage",
+    "002-zero-llm-orchestrator",
+    "003-conditional-strategist-routing",
+    "004-pglite-to-docker-postgres",
+    "005-task-graph-over-message-queue",
+    "006-append-only-audit-trail",
+    "007-state-changed-routing-fix",
+    "008-adapter-pattern-for-multi-channel",
+    "009-config-driven-agent-selection",
+    "010-tool-sandboxing-and-architect-routing",
+    "011-voice-edit-delta-feedback-loop",
+    "012-graduated-escalation",
+    "013-unified-action-proposals"
+  ]
+}

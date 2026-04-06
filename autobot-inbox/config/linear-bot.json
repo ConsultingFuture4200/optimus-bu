@@ -1,0 +1,67 @@
+{
+  "triggerLabel": "auto-fix",
+  "triggerAssigneeNames": ["Jamie Bot"],
+  "watchedTeams": ["Formul8", "FrontPoint Security", "Development", "Staqs Internal Projects"],
+  "watchedProjects": ["Optimus", "Optimus Phase 1 — MVP Completion", "Formul8", "Staqs - Staqs.io Site Redesign", "AutoCSR  - Ongoing Website Maintenance"],
+  "intentPriorities": [1, 2],
+  "signalPriorities": [0, 3, 4],
+  "intentLabels": {
+    "board-review": { "agent": "architect", "tier": "strategic" },
+    "needs-design": { "agent": "executor-research", "tier": "tactical" }
+  },
+  "workshopLabel": "workshop",
+  "playbookLabelPrefix": "playbook:",
+  "workshopAutoApprove": true,
+  "defaultTargetRepo": null,
+  "repoMapping": {
+    "repo:optimus": "staqsIO/optimus",
+    "repo:formul8": "f8ai/formul8-platform",
+    "repo:staqs-splash": "staqsIO/staqs-splash",
+    "repo:ag-webapp": "staqsIO/ag-webapp",
+    "repo:elevated-advisors": "staqsIO/elevated-advisors",
+    "repo:frontpoint": "staqsIO/frontpoint-security",
+    "repo:staqs-board": "staqsIO/staqs-board",
+    "qwik-formul8": "f8ai/qwik-formul8",
+    "repo:autocsr": "staqsIO/AutoCSR",
+    "new-repo": "staqsIO/optimus"
+  },
+  "projectMapping": {
+    "Optimus": "staqsIO/optimus",
+    "Optimus Phase 1 — MVP Completion": "staqsIO/optimus",
+    "Formul8": "f8ai/formul8-platform",
+    "Staqs - Staqs.io Site Redesign": "staqsIO/staqs-splash",
+    "Staqs - Portal Dashboard": "staqsIO/staqs-board",
+    "Altitude Guitar - Product Listing Generator": "staqsIO/product-listing-appbridge",
+    "AutoCSR  - Ongoing Website Maintenance": "staqsIO/AutoCSR"
+  },
+  "teamMapping": {
+    "Staqs Internal Projects": "staqsIO/optimus",
+    "Formul8": "f8ai/formul8-platform",
+    "FrontPoint Security": "staqsIO/frontpoint-security",
+    "Development": "staqsIO/optimus"
+  },
+  "boardMembers": [
+    { "name": "Eric Gang", "linearId": "52dd1b65-cd9b-403a-bae5-157f5b8dc7d5" },
+    { "name": "Dustin Powers", "linearId": "218b9275-c3b2-4b7f-a039-deb474c6bd52" },
+    { "name": "Kevin Serwatowski", "linearId": "1bf679bc-b3b0-4784-b774-ec56e541344e" }
+  ],
+  "botUserName": "Jamie Bot",
+  "replyBudgetUsd": 3,
+  "replyCooldownMs": 60000,
+  "repoDescriptions": {
+    "staqsIO/optimus": "Agent orchestration system, task graph, inbox pipeline, constitutional governance",
+    "f8ai/formul8-platform": "Cannabis compliance platform, Metrc integration, dispensary operations",
+    "staqsIO/staqs-splash": "Marketing website for Staqs.io",
+    "staqsIO/ag-webapp": "Altitude Guitar — Shopify Storefront API product listing app",
+    "staqsIO/elevated-advisors": "Elevated Advisors website",
+    "staqsIO/frontpoint-security": "FrontPoint Security website and operations",
+    "staqsIO/staqs-board": "Staqs portal dashboard",
+    "staqsIO/product-listing-appbridge": "Altitude Guitar product listing generator Shopify app",
+    "staqsIO/AutoCSR": "AutoCSR customer service website — FAQ, pricing, features"
+  },
+  "states": {
+    "inDevelopment": "188034fd-3a43-4205-ae9f-134d6443b268",
+    "internalReview": "d2b4a8a6-a572-49bc-b4f0-8e9069ed35ba",
+    "delivered": "b817cf7c-40be-4d01-aef3-0d938f7c6f7f"
+  }
+}

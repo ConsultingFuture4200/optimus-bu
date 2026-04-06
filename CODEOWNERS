@@ -1,0 +1,65 @@
+# CODEOWNERS — Review Routing for staqsIO/optimus
+#
+# Three tiers: BOARD (both founders), ARCHITECTURE (Eric), AGENT-MANAGED (no required reviewer).
+# GitHub requires at least one CODEOWNER approval before merge on protected branches.
+# See autobot-spec/conversation/009 for design rationale.
+
+# =============================================================================
+# BOARD TIER — Both board members required
+# Changes to governance, security boundaries, spec, board-facing interfaces
+# =============================================================================
+
+# Canonical spec — any change is a spec amendment
+/autobot-spec/                          @ConsultingFuture4200 @ecgang
+
+# Agent configs, gates, routing — security boundary (P1)
+/autobot-inbox/config/                  @ConsultingFuture4200 @ecgang
+
+# Board-facing interfaces
+/dashboard/                             @ConsultingFuture4200 @ecgang
+/autobot-inbox/dashboard/               @ConsultingFuture4200 @ecgang
+/autobot-inbox/electron/                @ConsultingFuture4200 @ecgang
+
+# Credentials
+/autobot-inbox/.env*                    @ConsultingFuture4200 @ecgang
+
+# Self-protection — changing review routing is a governance decision
+/CODEOWNERS                             @ConsultingFuture4200 @ecgang
+
+# AI agent instructions — governance-level
+/CLAUDE.md                              @ConsultingFuture4200 @ecgang
+/autobot-inbox/CLAUDE.md                @ConsultingFuture4200 @ecgang
+/autobot-spec/CLAUDE.md                 @ConsultingFuture4200 @ecgang
+
+# =============================================================================
+# ARCHITECTURE TIER — Eric required
+# Structural technical changes: schemas, orchestration, tools, CI/CD
+# =============================================================================
+
+# Schema migrations — a bug here is a security incident
+/autobot-inbox/sql/                     @ecgang
+
+# Orchestration layer — guard checks, state machine, runtime loop
+/autobot-inbox/src/runtime/             @ecgang
+
+# Tool registry and sandboxing
+/autobot-inbox/tools/                   @ecgang
+
+# CI/CD infrastructure
+/.github/                               @ecgang
+
+# =============================================================================
+# AGENT-MANAGED — No required reviewer
+# Routine implementation reviewed by Optimus reviewer agents.
+# Board can still review — they just aren't auto-pinged.
+# =============================================================================
+
+# /autobot-inbox/src/agents/       — no CODEOWNERS entry
+# /autobot-inbox/src/adapters/     — no CODEOWNERS entry
+# /autobot-inbox/src/gmail/        — no CODEOWNERS entry
+# /autobot-inbox/src/slack/        — no CODEOWNERS entry
+# /autobot-inbox/src/voice/        — no CODEOWNERS entry
+# /autobot-inbox/src/signal/       — no CODEOWNERS entry
+# /autobot-inbox/src/cli/          — no CODEOWNERS entry
+# /autobot-inbox/test/             — no CODEOWNERS entry
+# /autobot-inbox/docs/             — no CODEOWNERS entry

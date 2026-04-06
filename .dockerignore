@@ -1,0 +1,36 @@
+# Root .dockerignore — used when build context is . (repo root)
+# Applies to autobot-inbox and docs-site builds
+
+# Runtime artifacts
+node_modules/
+*.log
+.git/
+.github/
+.claude/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Data directories
+autobot-inbox/data/
+autobot-inbox/keys/
+campaigns/
+
+# Test/dev files
+autobot-inbox/test/
+autobot-inbox/electron/
+
+# Docs (not needed in runtime containers)
+autobot-inbox/docs/
+autobot-spec/
+docs-site/
+
+# Dashboard (separate build)
+dashboard/
+autobot-inbox/dashboard/
+
+# Spec and markdown (not needed in containers)
+*.md
+!autobot-inbox/config/*.md

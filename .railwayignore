@@ -1,0 +1,9 @@
+autobot-spec/
+autobot-inbox/data/
+autobot-inbox/node_modules/
+autobot-inbox/test/
+dashboard/node_modules/
+.git/
+*.log
+.env
+.env.*
