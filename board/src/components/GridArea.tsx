@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -19,15 +19,77 @@ const DAILY_OPS_DEFAULT_LAYOUT: Layout = [
   { i: 'optimus.agent-status',   x: 0, y: 8, w: 12, h: 6 },
 ] as const;
 
+// Debounce hook — delays value propagation by `delay` ms.
+// Used to batch rapid drag/resize events before triggering auto-save (D-14).
+function useDebounce<T>(value: T, delay: number): T {
+  const [debounced, setDebounced] = useState<T>(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
+
 export default function GridArea() {
   // useContainerWidth provides width measurement and a mounted flag (SHELL-07)
   const { width, mounted, containerRef } = useContainerWidth({ measureBeforeMount: true });
   const [layout, setLayout] = useState<Layout>(DAILY_OPS_DEFAULT_LAYOUT);
 
+  // Guard: skip auto-save on first debounce trigger (before saved layout loads)
+  const isInitialLoad = useRef(true);
+
+  // Debounced layout for auto-save — 2500ms per D-14 (within 2-3s range)
+  const debouncedLayout = useDebounce(layout, 2500);
+
+  // Load saved workspace on mount (SHELL-06 round-trip fidelity)
+  // Non-blocking: grid renders with default layout immediately, swaps when fetch resolves
+  useEffect(() => {
+    fetch('/api/workspaces?name=Daily+Ops')
+      .then((res) => {
+        if (!res.ok) return null;
+        return res.json();
+      })
+      .then((data) => {
+        if (data?.items && Array.isArray(data.items) && data.items.length > 0) {
+          setLayout(data.items as Layout);
+        }
+      })
+      .catch(() => {
+        // Per UI-SPEC: silent failure — fall back to DAILY_OPS_DEFAULT_LAYOUT already in state
+        console.warn('[GridArea] Could not load workspace, using default layout');
+      })
+      .finally(() => {
+        // Mark initial load complete so auto-save can begin watching
+        isInitialLoad.current = false;
+      });
+  }, []);
+
+  // Auto-save on debounced layout change (D-14)
+  // Skips the first trigger to avoid saving the default layout before the real one loads
+  useEffect(() => {
+    if (isInitialLoad.current) return;
+
+    fetch('/api/workspaces', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Daily Ops',
+        layout: {
+          schemaVersion: 1,
+          items: debouncedLayout,
+          pluginConfigs: {},
+        },
+      }),
+    }).catch(() => {
+      // Per UI-SPEC: silent failure in Phase 1 — no user-visible error
+      console.warn('[GridArea] Auto-save failed');
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedLayout]);
+
   const onLayoutChange = useCallback((newLayout: Layout) => {
     setLayout(newLayout);
     // Layout serializes to JSON for round-trip fidelity (SHELL-06)
-    // Auto-save will be wired in Plan 03 — for now, layout is held in-memory
   }, []);
 
   // Don't render the grid until client-side width is measured (SHELL-07 mounted guard)
