@@ -55,22 +55,24 @@ Exceptions:
 
 Sourced from existing component patterns (`HeaderBar.tsx`, `SideNav.tsx`, `globals.css`).
 
+Two weights only: 400 (normal) and 600 (semibold).
+
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Body | 14px (text-sm) | 400 (normal) | 1.5 | Default text in plugin panes, nav items, status text |
 | Label | 12px (text-xs) | 400 (normal) | 1.4 | SSE status, settings labels, metadata, error detail pre block |
 | Heading | 16px (text-base) | 600 (semibold) | 1.2 | Plugin pane title in error card, section headings |
-| Display | 13px (text-[13px]) | 700 (bold, uppercase) | 1.0 | Nav group labels (10px, uppercase, wide tracking — `text-[10px] uppercase tracking-wider`) |
+| Display | 13px (text-[13px]) | 600 (semibold, uppercase) | 1.0 | Nav group labels (10px, uppercase, wide tracking — `text-[10px] uppercase tracking-wider`). Visual distinction comes from `uppercase` + `tracking-wider`, not from additional weight. |
 
 Note: The existing codebase uses `text-sm` (14px) as the primary body size and `text-xs` (12px) for secondary labels. These are pre-established patterns — do not deviate.
 
 Error card specifically uses:
-- Plugin name: 14px, weight 500 (`font-medium`), color `text-red-400`
+- Plugin name: 14px, weight 600 (semibold), color `text-red-400`
 - "Something went wrong": 14px, weight 400, color `text-neutral-400`
 - Retry / Details buttons: 12px, weight 400
 
 Stub plugin header (Phase 1 placeholder only):
-- Plugin name: 14px, weight 500, color `text-zinc-400`
+- Plugin name: 14px, weight 600 (semibold), color `text-zinc-400`
 
 ---
 
@@ -111,6 +113,8 @@ Accent is NOT used for: general interactive states, hover backgrounds (use `bg-w
 ## Layout Contract
 
 Phase 1 delivers the shell structure. All dimensions are fixed and derived from locked decisions (CONTEXT.md).
+
+Primary visual anchor is the grid area. The OPTIMUS wordmark (accent-bright) in HeaderBar establishes brand identity; the plugin pane grid occupies the dominant viewport real estate.
 
 ```
 ┌─────────────────────────────────────────────────┐
