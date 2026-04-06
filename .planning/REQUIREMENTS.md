@@ -141,67 +141,67 @@
 | SHELL-07 | Phase 1 | Pending |
 | SHELL-08 | Phase 1 | Pending |
 | SHELL-09 | Phase 1 | Pending |
-| CMD-01 | TBD | Pending |
-| CMD-02 | TBD | Pending |
-| CMD-03 | TBD | Pending |
-| CMD-04 | TBD | Pending |
-| CMD-05 | TBD | Pending |
-| WKSP-01 | TBD | Pending |
-| WKSP-02 | TBD | Pending |
-| WKSP-03 | TBD | Pending |
-| WKSP-04 | TBD | Pending |
-| WKSP-05 | TBD | Pending |
-| WKSP-06 | TBD | Pending |
-| DATA-01 | TBD | Pending |
-| DATA-02 | TBD | Pending |
-| DATA-03 | TBD | Pending |
-| DATA-04 | TBD | Pending |
-| DATA-05 | TBD | Pending |
-| DATA-06 | TBD | Pending |
-| DATA-07 | TBD | Pending |
-| DATA-08 | TBD | Pending |
-| DATA-09 | TBD | Pending |
-| DATA-10 | TBD | Pending |
-| PLG-01 | TBD | Pending |
-| PLG-02 | TBD | Pending |
-| PLG-03 | TBD | Pending |
-| PLG-04 | TBD | Pending |
-| PLG-05 | TBD | Pending |
-| PLG-06 | TBD | Pending |
-| PLG-07 | TBD | Pending |
-| PLG-08 | TBD | Pending |
-| PLG-09 | TBD | Pending |
-| PLG-10 | TBD | Pending |
-| PLG-11 | TBD | Pending |
-| PLG-12 | TBD | Pending |
-| PLG-13 | TBD | Pending |
-| PLG-14 | TBD | Pending |
-| PLG-15 | TBD | Pending |
-| PLG-16 | TBD | Pending |
-| PLG-17 | TBD | Pending |
-| PSTD-01 | TBD | Pending |
-| PSTD-02 | TBD | Pending |
-| PSTD-03 | TBD | Pending |
-| PSTD-04 | TBD | Pending |
-| PSTD-05 | TBD | Pending |
-| MOBL-01 | TBD | Pending |
-| MOBL-02 | TBD | Pending |
-| MOBL-03 | TBD | Pending |
-| DECOM-01 | TBD | Pending |
-| DECOM-02 | TBD | Pending |
-| DECOM-03 | TBD | Pending |
-| DECOM-04 | TBD | Pending |
-| DEPLOY-01 | TBD | Pending |
-| DEPLOY-02 | TBD | Pending |
-| DEPLOY-03 | TBD | Pending |
-| DEPLOY-04 | TBD | Pending |
-| DEPLOY-05 | TBD | Pending |
+| DATA-01 | Phase 2 | Pending |
+| DATA-02 | Phase 2 | Pending |
+| DATA-03 | Phase 2 | Pending |
+| DATA-04 | Phase 2 | Pending |
+| DATA-05 | Phase 2 | Pending |
+| DATA-06 | Phase 2 | Pending |
+| DATA-07 | Phase 2 | Pending |
+| DATA-08 | Phase 2 | Pending |
+| DATA-09 | Phase 2 | Pending |
+| DATA-10 | Phase 2 | Pending |
+| PLG-01 | Phase 3 | Pending |
+| PLG-02 | Phase 3 | Pending |
+| PLG-03 | Phase 3 | Pending |
+| PLG-04 | Phase 3 | Pending |
+| PLG-05 | Phase 3 | Pending |
+| PLG-06 | Phase 3 | Pending |
+| PLG-07 | Phase 3 | Pending |
+| PLG-08 | Phase 3 | Pending |
+| PLG-09 | Phase 3 | Pending |
+| PLG-10 | Phase 3 | Pending |
+| PLG-11 | Phase 3 | Pending |
+| PLG-12 | Phase 3 | Pending |
+| PLG-13 | Phase 3 | Pending |
+| PLG-14 | Phase 3 | Pending |
+| PLG-15 | Phase 3 | Pending |
+| PLG-16 | Phase 3 | Pending |
+| PLG-17 | Phase 3 | Pending |
+| PSTD-01 | Phase 3 | Pending |
+| PSTD-02 | Phase 3 | Pending |
+| PSTD-03 | Phase 3 | Pending |
+| PSTD-04 | Phase 3 | Pending |
+| PSTD-05 | Phase 3 | Pending |
+| CMD-01 | Phase 4 | Pending |
+| CMD-02 | Phase 4 | Pending |
+| CMD-03 | Phase 4 | Pending |
+| CMD-04 | Phase 4 | Pending |
+| CMD-05 | Phase 4 | Pending |
+| WKSP-01 | Phase 4 | Pending |
+| WKSP-02 | Phase 4 | Pending |
+| WKSP-03 | Phase 4 | Pending |
+| WKSP-04 | Phase 4 | Pending |
+| WKSP-05 | Phase 4 | Pending |
+| WKSP-06 | Phase 4 | Pending |
+| MOBL-01 | Phase 4 | Pending |
+| MOBL-02 | Phase 4 | Pending |
+| MOBL-03 | Phase 4 | Pending |
+| DECOM-01 | Phase 5 | Pending |
+| DECOM-02 | Phase 5 | Pending |
+| DECOM-03 | Phase 5 | Pending |
+| DECOM-04 | Phase 5 | Pending |
+| DEPLOY-01 | Phase 5 | Pending |
+| DEPLOY-02 | Phase 5 | Pending |
+| DEPLOY-03 | Phase 5 | Pending |
+| DEPLOY-04 | Phase 5 | Pending |
+| DEPLOY-05 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 55 total
-- Mapped to phases: 9 (SHELL-01 through SHELL-09)
-- Unmapped: 46 (to be mapped by roadmapper)
+- Mapped to phases: 55/55
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-05*
-*Last updated: 2026-04-05 after initial definition*
+*Last updated: 2026-04-05 — traceability completed by roadmapper*
