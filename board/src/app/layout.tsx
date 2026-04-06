@@ -6,7 +6,7 @@ import EventStreamProvider from "@/components/EventStreamProvider";
 import { ChatSessionProvider } from "@/contexts/ChatSessionContext";
 import { PageContextProvider } from "@/contexts/PageContext";
 import HeaderBar from "@/components/HeaderBar";
-import BoardShell from "@/components/BoardShell";
+import PluginShell from "@/components/PluginShell";
 import CampaignNotifications from "@/components/CampaignNotifications";
 
 export const metadata: Metadata = {
@@ -28,7 +28,7 @@ export default function RootLayout({
               <ChatSessionProvider>
                 <PageContextProvider>
                   <HeaderBar />
-                  <BoardShell>{children}</BoardShell>
+                  <PluginShell />
                   <CampaignNotifications />
                 </PageContextProvider>
               </ChatSessionProvider>
