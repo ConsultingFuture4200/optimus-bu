@@ -30,7 +30,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A plugin that throws a render error shows an error card with retry — adjacent plugins continue working
   4. Shell loads in under 2s on desktop and under 3s on mobile
   5. board.workspaces Postgres table exists with schemaVersion field; migrateWorkspace() function exists before any layout is saved
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 **UI hint**: yes
 
 ### Phase 2: Data Provider Layer
@@ -42,7 +46,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. A write action (approve draft, reject draft, toggle HALT) POSTs to the existing port 3001 API — never touches Postgres directly
   3. SSE connects, disconnects, and reconnects automatically with exponential backoff; real-time update appears in dashboard within 3s of brain state change
   4. If SSE is disconnected, REST polling at 30s interval keeps data current — HALT status never goes stale
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 
 ### Phase 3: Core Plugins
 **Goal**: All 12 plugins are built and functional with feature parity to the 16 pages they replace — HALT Control and Approval Queue ship first and are reviewed before any other plugin
@@ -54,7 +62,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. All 12 plugins render correctly at default size and when resized; each handles loading state (skeleton) and error state (error card with retry)
   4. Every plugin's boilerplate is under 50 lines; each plugin manifest declares id, name, version, category, dataDependencies, defaultSize, mobileSupported
   5. Feature parity matrix signed off — every function from all 16 replaced pages is present in the new plugins
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 **UI hint**: yes
 
 ### Phase 4: Command Palette, Presets, and Mobile
@@ -66,7 +78,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Board member saves a custom layout, reloads the page, and the exact grid layout and per-plugin configs restore
   3. Board member selects a preset (Daily Ops, Pipeline, Governance, Command, Cost Review) and that layout loads without overwriting their personal saved workspace
   4. At 375px viewport width, the shell switches to single-plugin full-screen; board member swipes or taps to navigate between active plugins; drag/resize are disabled
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 **UI hint**: yes
 
 ### Phase 5: Decommission and Deploy
@@ -78,7 +94,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Board member approves a real draft end-to-end through the new dashboard; board member triggers and resumes HALT through the new dashboard
   3. SSE updates are visible within 3s of brain state change in production
   4. inbox.staqs.io redirects to board.staqs.io; inbox-dashboard service is removed from compose.yml and compose.prod.yml; autobot-inbox/dashboard/ directory is removed from the repo
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 
 ## Progress
 
@@ -87,7 +107,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Shell Scaffold | 0/TBD | Not started | - |
+| 1. Shell Scaffold | 0/3 | Not started | - |
 | 2. Data Provider Layer | 0/TBD | Not started | - |
 | 3. Core Plugins | 0/TBD | Not started | - |
 | 4. Command Palette, Presets, and Mobile | 0/TBD | Not started | - |
