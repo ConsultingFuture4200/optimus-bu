@@ -1,325 +1,589 @@
-# Architecture Research: Spec Compliance Audit
+# Architecture Research
 
-**Domain:** Governed agent organization — spec-vs-code systematic audit
-**Researched:** 2026-04-01
-**Confidence:** HIGH (based on codebase map in `.planning/codebase/` and SPEC.md structure)
+**Domain:** Plugin-based dashboard (Next.js 15 App Router)
+**Researched:** 2026-04-05
+**Confidence:** HIGH — existing codebase read directly; patterns verified against official docs and Next.js 15 community sources
+
+---
 
 ## Standard Architecture
 
-### System Overview: Audit Component Map
-
-The audit is not a linear scan. It has four distinct component families, with hard dependency ordering between them. Auditing a higher-tier component before its foundation is verified produces unreliable results.
+### System Overview
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                   TIER 0: Foundations                             │
-│  ┌──────────────────┐  ┌────────────────────────────────────┐    │
-│  │  Design Principles│  │  Schema / DDL Integrity            │    │
-│  │  P1-P6 scan      │  │  (001-baseline.sql vs spec §12)    │    │
-│  │  (cross-cutting) │  │  No cross-schema FK; schemas match │    │
-│  └──────────────────┘  └────────────────────────────────────┘    │
-├──────────────────────────────────────────────────────────────────┤
-│                   TIER 1: Identity + Enforcement                  │
-│  ┌──────────────────┐  ┌────────────────────────────────────┐    │
-│  │  Agent Identity  │  │  Constitutional Gates              │    │
-│  │  JWT + RLS (§5)  │  │  G1-G7, guardCheck(), atomic tx   │    │
-│  └──────────────────┘  └────────────────────────────────────┘    │
-├──────────────────────────────────────────────────────────────────┤
-│                   TIER 2: Coordination Correctness                │
-│  ┌──────────────────┐  ┌────────────────────────────────────┐    │
-│  │  Task Graph (§3) │  │  Agent Tier Enforcement (§2)       │    │
-│  │  State machine,  │  │  Model assignments, can_assign_to, │    │
-│  │  DAG edges,      │  │  tier constraints from config      │    │
-│  │  retry/escalate  │  └────────────────────────────────────┘    │
-│  └──────────────────┘                                            │
-├──────────────────────────────────────────────────────────────────┤
-│                   TIER 3: Observability + Integrity               │
-│  ┌──────────────────┐  ┌────────────────────────────────────┐    │
-│  │  Hash-Chain Audit│  │  Phase 1 Exit Criteria (§14)       │    │
-│  │  P3 compliance   │  │  All §14 items implemented or      │    │
-│  │  append-only logs│  │  explicitly flagged as future phase│    │
-│  └──────────────────┘  └────────────────────────────────────┘    │
-└──────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  board.staqs.io (Next.js 15, port 3200)                         │
+│                                                                  │
+│  RootLayout (app/layout.tsx)                                     │
+│  ├── SessionProvider (NextAuth)                                  │
+│  ├── EventStreamProvider  ← global SSE singleton                │
+│  └── WorkspaceShell (NEW: replaces BoardShell)                  │
+│      ├── CommandPalette (cmdk, Cmd+K, global)                   │
+│      ├── WorkspaceCanvas  ← react-grid-layout                   │
+│      │   ├── PluginSlot [key=plugin-id]                         │
+│      │   │   └── ErrorBoundary                                  │
+│      │   │       └── <PluginComponent />                        │
+│      │   ├── PluginSlot [key=plugin-id]                         │
+│      │   └── ...                                                │
+│      └── WorkspaceBar (preset switcher, add-plugin, SSE badge)  │
+│                                                                  │
+│  Plugin Registry (compile-time, static map)                     │
+│  ├── approval-queue     → ApprovalQueuePlugin                   │
+│  ├── halt-control       → HaltControlPlugin                     │
+│  ├── agent-monitor      → AgentMonitorPlugin                    │
+│  ├── pipeline           → PipelinePlugin                        │
+│  ├── cost-review        → CostReviewPlugin                      │
+│  └── ... (12 total)                                             │
+│                                                                  │
+│  Data Provider Layer  ("use client" hooks, shared across all    │
+│  plugins via import — not context)                              │
+│  ├── useAgents()        REST GET /api/agents                    │
+│  ├── useDrafts()        REST GET /api/drafts                    │
+│  ├── useApprovals()     REST GET /api/drafts?status=pending     │
+│  ├── usePipeline()      REST GET /api/pipeline                  │
+│  ├── useCosts()         REST GET /api/costs                     │
+│  ├── useHaltStatus()    REST GET /api/halt                      │
+│  ├── useSignals()       REST GET /api/signals                   │
+│  ├── useGovernance()    REST GET /api/governance                │
+│  ├── useTaskGraph()     REST GET /api/tasks                     │
+│  ├── useEventFeed()     SSE via useEventStream() singleton      │
+│  └── [mutating hooks]   REST POST/PATCH + guardCheck writes     │
+│                                                                  │
+│  Workspace Persistence Layer                                     │
+│  ├── useWorkspace()     local state + Postgres sync             │
+│  ├── POST /api/workspaces  save layout + plugin config          │
+│  └── GET  /api/workspaces  load on mount                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │ HTTP (OPS_API_URL = port 3001)
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  autobot-inbox API (port 3001)  — UNTOUCHED                     │
+│  ├── REST endpoints (reads, writes + guardCheck)                │
+│  └── SSE relay  /api/ops/events  (Redis pub/sub → browser)      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | What Gets Audited | Files | Spec Reference |
-|-----------|------------------|-------|----------------|
-| P1-P6 Principle Scan | Every module checked for deny-by-default, infra enforcement, boring deps | `src/**/*.js` | SPEC §0 |
-| Schema / DDL Integrity | Five schemas, no cross-schema FKs, column types match spec | `sql/001-baseline.sql` | SPEC §12 |
-| JWT Agent Identity | `agent-jwt.js` issues/verifies tokens; `withAgentScope()` enforces before any DB write | `src/runtime/agent-jwt.js`, `src/db.js` | SPEC §5 target |
-| RLS Agent Isolation | Policies defined AND enforced; non-superuser test roles verify policy activation | `sql/001-baseline.sql` RLS sections, `src/db.js` | SPEC §5 target |
-| Constitutional Gates G1-G7 | `guardCheck()` + `transition_state()` in single Postgres transaction; gate config matches `gates.json` | `src/runtime/guard-check.js`, `src/runtime/state-machine.js` | SPEC §5 current |
-| Task Graph State Machine | Valid transitions only (`created→assigned→in_progress→review→completed`); failed tasks retry≤3 then escalate | `src/runtime/state-machine.js`, `agent_graph.state_transitions` | SPEC §3 |
-| DAG Edge Integrity | `depends_on` edges are acyclic; no orphan work items; blocked state propagates | `src/runtime/state-machine.js`, `agent_graph.work_item_edges` | SPEC §3 |
-| Agent Tier Model Assignments | Strategist=Opus, Architect/Orchestrator/Reviewer=Sonnet, Executors=Haiku; `can_assign_to` lists are explicit (no globs) | `config/agents.json`, `src/agents/orchestrator.js` | SPEC §2 |
-| Hash-Chain Audit Logs | `state_transitions.hash` chains each row to previous; merkle proofs publishable | `src/runtime/state-machine.js`, `src/runtime/merkle-publisher.js` | SPEC P3 |
-| pg_notify Event System | No external message queue; all inter-agent signals via `pg_notify` | `src/runtime/event-bus.js` | SPEC P4 |
-| Phase 1 Exit Criteria | Every §14 item either has code pointer or explicit "future phase" label | SPEC §14, `PROJECT.md` | SPEC §14 |
+| Component | Layer | Responsibility | Communicates With |
+|-----------|-------|---------------|-------------------|
+| `RootLayout` | App shell | HTML scaffold, global providers, auth boundary | All providers |
+| `EventStreamProvider` | Global provider | SSE singleton lifecycle, global counters (pendingDrafts, pendingHitl) | `useEventStream` hook |
+| `WorkspaceShell` | Shell | Renders `react-grid-layout` canvas, mounts plugins, owns workspace state | PluginSlot, CommandPalette, WorkspaceBar, useWorkspace |
+| `PluginSlot` | Shell | Wraps each plugin in an ErrorBoundary; passes plugin-id as key | ErrorBoundary, PluginComponent |
+| `ErrorBoundary` | Shell | Catches plugin crashes, renders error card, does not propagate up | PluginComponent |
+| `CommandPalette` | Shell | Global Cmd+K, fuzzy search over workspaces/plugins/drafts | useWorkspace, useApprovals, useSignals |
+| `WorkspaceBar` | Shell | Preset switcher, add-plugin button, SSE connection badge | useWorkspace, EventStreamContext |
+| `PluginRegistry` | Plugin system | Static compile-time map: pluginId → Component + metadata | WorkspaceShell (consumer) |
+| `[PluginComponent]` | Plugin | Renders a single operational view; calls data provider hooks directly | Data provider hooks, mutation functions |
+| Data provider hooks | Data layer | Typed hooks wrapping fetch + SWR; each hook owns its URL and cache | autobot-inbox API (port 3001) |
+| `useEventStream` | Data layer | Global SSE singleton; typed event dispatch by event name | EventSource `/api/ops/events`, any plugin |
+| `useWorkspace` | Persistence layer | Load/save workspace layouts + plugin configs to Postgres | `POST /api/workspaces`, `GET /api/workspaces` |
+| `/api/workspaces` | API route | Board-side route that reads/writes `board.workspaces` table | Postgres (Supabase) |
 
-## Recommended Audit Structure
+---
 
-### Approach: Bottom-Up Foundations First, Then Top-Down Completeness
-
-The audit should run bottom-up. Checking agent tier enforcement (TIER 2) is only meaningful if the identity layer (TIER 1) is verified first — an agent claiming the wrong tier via a forged JWT corrupts all tier-level findings. Similarly, checking the state machine (TIER 2) is only meaningful if the schema it writes to (TIER 0) has the correct structure.
-
-**Do not audit TIER 2 before TIER 0 and TIER 1 are clean.**
-
-After TIER 0-2 are verified, apply a top-down completeness pass (TIER 3) to confirm that §14 has no silent gaps.
+## Recommended Project Structure
 
 ```
-autobot-inbox/
-├── audit-components/       # Conceptual groupings, not a real directory
-│   ├── tier0/
-│   │   ├── design-principles/   # P1-P6 across all modules
-│   │   └── schema-integrity/    # DDL vs spec §12
-│   ├── tier1/
-│   │   ├── jwt-identity/        # agent-jwt.js + withAgentScope()
-│   │   └── constitutional-gates/ # guard-check.js + atomic transaction
-│   ├── tier2/
-│   │   ├── task-graph/          # state-machine.js + DAG edges
-│   │   └── agent-tiers/         # config/agents.json + orchestrator routing
-│   └── tier3/
-│       ├── hash-chain/          # state_transitions hash integrity
-│       └── phase1-exit/         # §14 completeness map
+board/src/
+├── app/
+│   ├── layout.tsx                    # Root: SessionProvider, EventStreamProvider, WorkspaceShell
+│   ├── page.tsx                      # Redirect → /workspace
+│   ├── api/
+│   │   └── workspaces/
+│   │       └── route.ts             # GET/POST workspace persistence (board-side Postgres)
+│   └── workspace/
+│       └── page.tsx                 # Workspace canvas (client component entry)
+│
+├── components/
+│   ├── shell/
+│   │   ├── WorkspaceShell.tsx        # react-grid-layout canvas, plugin mounting
+│   │   ├── PluginSlot.tsx            # ErrorBoundary wrapper per grid cell
+│   │   ├── WorkspaceBar.tsx          # Preset switcher, add-plugin, SSE badge
+│   │   └── CommandPalette.tsx        # cmdk Cmd+K global palette
+│   └── [legacy components kept]      # SessionProvider, EventStreamProvider, HeaderBar
+│
+├── plugins/
+│   ├── registry.ts                   # Static map: pluginId → { component, meta }
+│   ├── types.ts                      # PluginMeta, PluginProps interfaces
+│   ├── approval-queue/
+│   │   └── index.tsx                 # ApprovalQueuePlugin
+│   ├── halt-control/
+│   │   └── index.tsx                 # HaltControlPlugin
+│   ├── agent-monitor/
+│   │   └── index.tsx
+│   ├── pipeline/
+│   │   └── index.tsx
+│   ├── cost-review/
+│   │   └── index.tsx
+│   ├── signals/
+│   │   └── index.tsx
+│   ├── governance/
+│   │   └── index.tsx
+│   ├── task-graph/
+│   │   └── index.tsx
+│   ├── knowledge-base/
+│   │   └── index.tsx
+│   ├── campaigns/
+│   │   └── index.tsx
+│   ├── drafts/
+│   │   └── index.tsx
+│   └── activity-feed/
+│       └── index.tsx
+│
+├── hooks/
+│   ├── useEventStream.ts             # EXISTING — global SSE singleton (keep as-is)
+│   ├── useWorkspace.ts               # NEW — workspace layout + config persistence
+│   ├── data/
+│   │   ├── useAgents.ts              # GET /api/agents
+│   │   ├── useDrafts.ts              # GET /api/drafts
+│   │   ├── useApprovals.ts           # GET /api/drafts?status=pending
+│   │   ├── usePipeline.ts            # GET /api/pipeline
+│   │   ├── useCosts.ts               # GET /api/costs
+│   │   ├── useHaltStatus.ts          # GET /api/halt
+│   │   ├── useSignals.ts             # GET /api/signals
+│   │   ├── useGovernance.ts          # GET /api/governance
+│   │   ├── useTaskGraph.ts           # GET /api/tasks
+│   │   └── useEventFeed.ts           # SSE wrapper for plugins
+│   └── mutations/
+│       ├── useApproveDraft.ts        # POST /api/drafts/:id/approve
+│       ├── useRejectDraft.ts         # POST /api/drafts/:id/reject
+│       └── useHaltToggle.ts          # POST /api/halt (P0 safety-critical)
+│
+├── contexts/
+│   └── [existing contexts kept]
+│
+├── lib/
+│   ├── api-client.ts                 # Typed fetch wrapper (OPS_API_URL base, auth headers)
+│   ├── workspace-presets.ts          # 5 static preset definitions
+│   └── [existing lib files]
+│
+└── middleware.ts                     # EXISTING — NextAuth guard (unchanged)
 ```
 
-### Structure Rationale
+---
 
-- **tier0/ (Foundations):** Everything else depends on the schema being correct and the design principles being applied. Audited first because findings here cascade.
-- **tier1/ (Enforcement):** The two mechanisms that stop bad things from happening. JWT identity is a prerequisite for RLS; RLS is a prerequisite for trusting agent-scoped queries in tier2.
-- **tier2/ (Coordination):** Only auditable once identity and enforcement are trustworthy. State machine correctness depends on knowing that the agents writing to it are who they claim to be.
-- **tier3/ (Observability + Completeness):** Audit log integrity is verified last because it depends on the state transitions being written correctly (tier2). Phase 1 exit completeness is a top-down scan that closes the loop.
+## Architectural Patterns
 
-## Architectural Patterns for the Audit
+### Pattern 1: Plugin as a Typed React Component
 
-### Pattern 1: Infrastructure Enforcement vs. Prompt Advice Separation
+Every plugin is a standard React component that receives no special props — it calls data provider hooks directly. The shell knows nothing about what plugins render.
 
-**What:** Every constraint must be enforced by DB constraints, JWT verification, or a Postgres transaction — never by a prompt instruction. The audit must classify each constraint as one of three types: INFRA (enforced by code/DB), ADVISORY (prompt-only, flagged as gap), or UNVERIFIED (no evidence found either way).
+```typescript
+// plugins/types.ts
+export interface PluginMeta {
+  id: string;
+  label: string;
+  defaultSize: { w: number; h: number; minW?: number; minH?: number };
+  mobileFullscreen: boolean; // single-plugin full-screen on <768px
+}
 
-**When to use:** Applied across all components. Any control found to be ADVISORY must be logged as a P2 violation.
+// plugins/registry.ts
+import { lazy } from "react";
 
-**Why this matters for audit ordering:** You cannot trust ADVISORY controls during higher-tier audits. Discovering a P2 violation in TIER 0 may invalidate assumptions in TIER 2. Run TIER 0 first.
-
-**Example classification:**
-```
-G1 Budget Gate:
-  - DB CHECK constraint on autobot_finance.budget_ledger: INFRA (verified)
-  - Agent prompt says "don't exceed budget": ADVISORY (expected, non-blocking)
-  - guardCheck() pre-authorization call before state transition: INFRA (to verify)
-```
-
-### Pattern 2: Dependency Ordering as a Directed Graph
-
-**What:** Audit components form a DAG. Each component lists what it depends on being verified first. This prevents false confidence: a "passing" agent tier check is meaningless if JWT identity is broken.
-
-**Dependency chain:**
-```
-schema-integrity
-    ↓ (schema correct?)
-jwt-identity ← schema-integrity
-    ↓ (JWT verified?)
-rls-isolation ← jwt-identity + schema-integrity
-    ↓ (RLS active?)
-constitutional-gates ← rls-isolation
-    ↓ (gates fire correctly?)
-task-graph ← constitutional-gates + schema-integrity
-    ↓ (state machine is sound?)
-agent-tiers ← task-graph + jwt-identity
-    ↓ (tiers enforced?)
-hash-chain ← task-graph
-    ↓ (audit log trustworthy?)
-phase1-exit ← ALL above
+export const PLUGIN_REGISTRY: Record<string, {
+  component: React.LazyExoticComponent<() => JSX.Element>;
+  meta: PluginMeta;
+}> = {
+  "approval-queue": {
+    component: lazy(() => import("./approval-queue")),
+    meta: { id: "approval-queue", label: "Approval Queue",
+            defaultSize: { w: 6, h: 8, minW: 4, minH: 4 }, mobileFullscreen: true },
+  },
+  "halt-control": {
+    component: lazy(() => import("./halt-control")),
+    meta: { id: "halt-control", label: "HALT Control",
+            defaultSize: { w: 3, h: 3, minW: 3, minH: 3 }, mobileFullscreen: true },
+  },
+  // ...
+};
 ```
 
-### Pattern 3: Two-Phase Verification per Component
+Note: `lazy()` is for code-splitting only — all plugins compile into the bundle. No runtime URL loading.
 
-**What:** Each audit component runs in two passes: (1) static analysis — read code and config, compare to spec text; (2) runtime verification — run a test that exercises the constraint and confirms it fires.
+### Pattern 2: Plugin Slot with Error Boundary
 
-**When to use:** Applied to all TIER 1 and TIER 2 components. Static analysis alone is insufficient for enforcement claims.
+Each grid cell wraps its plugin in an error boundary. A crash renders a contained error card — the rest of the workspace continues.
 
-**Trade-offs:** Runtime verification requires a working test environment. Static-only findings should be labeled LOW confidence.
+```typescript
+// components/shell/PluginSlot.tsx
+"use client";
+import { ErrorBoundary } from "react-error-boundary";
+import { Suspense } from "react";
 
-**Example for G1 budget gate:**
-```
-Pass 1 (Static):
-  - Read guard-check.js: does G1 code exist? Does it call the DB?
-  - Read sql/001-baseline.sql: does budget_ledger have a CHECK constraint?
-  - Read gates.json: is G1 threshold defined?
+function PluginErrorCard({ error }: { error: Error }) {
+  return (
+    <div className="plugin-error">
+      <p>Plugin failed: {error.message}</p>
+    </div>
+  );
+}
 
-Pass 2 (Runtime):
-  - Exhaust DAILY_BUDGET_USD in test
-  - Attempt state transition
-  - Verify transition is blocked, not just warned
-  - Verify work_item transitions to `blocked`, not `failed`
-```
+export function PluginSlot({ pluginId }: { pluginId: string }) {
+  const entry = PLUGIN_REGISTRY[pluginId];
+  if (!entry) return <div>Unknown plugin: {pluginId}</div>;
 
-### Pattern 4: "Currently Implemented" vs. "Target Architecture" Classification
+  const { component: Plugin } = entry;
 
-**What:** SPEC §5 distinguishes between what guardrails exist now and what the target architecture requires. The audit must explicitly classify each §5 item against this distinction — otherwise findings will either over-report gaps (by applying target requirements to Phase 1) or under-report them (by treating target items as already done).
-
-**Classification scheme:**
-
-| Status | Meaning | Audit Action |
-|--------|---------|-------------|
-| CURRENT-IMPLEMENTED | In codebase and active | Verify correctness |
-| CURRENT-PARTIAL | In codebase but inactive/incomplete | Document gap + severity |
-| TARGET-FUTURE | Spec says Phase 2+ | Confirm not claimed as done in code comments |
-| CLAIMED-INCOMPLETE | Code claims it but evidence is absent | Flag as critical gap |
-
-**Known classifications from codebase map:**
-
-| Item | Status | Evidence |
-|------|--------|---------|
-| G1-G7 constitutional gates | CURRENT-IMPLEMENTED | `guard-check.js`, `gates.json` |
-| JWT signing and verification | CURRENT-IMPLEMENTED | `agent-jwt.js` issueToken/verifyToken |
-| RLS policy definitions | CURRENT-PARTIAL | Policies defined in SQL, enforcement optional in `withAgentScope()` |
-| Per-agent DB roles | TARGET-FUTURE | ADR-018 Phase 2 |
-| Token revocation list | CURRENT-PARTIAL | In-memory kill switch exists; blocklist not implemented |
-| Tool allow-lists | CURRENT-PARTIAL | `tools_allowed` in `agents.json`, enforcement unclear |
-| Content sanitization | UNVERIFIED | No clear reference in codebase map |
-| Tool integrity hash check | TARGET-FUTURE | Not implemented, ADR pending |
-
-## Data Flow: Audit Execution Sequence
-
-### Audit Execution Flow
-
-```
-Spec §0 (P1-P6) Text
-    ↓ (extract each principle as testable assertion)
-Principle Assertion List
-    ↓ (scan code for each assertion)
-[static scan of src/**/*.js]
-    ↓
-P1-P6 Findings (PASS/FAIL/UNVERIFIED per module)
-    ↓
-sql/001-baseline.sql
-    ↓ (compare schemas to spec §12)
-Schema Gap Report
-    ↓
-agent-jwt.js + db.js withAgentScope()
-    ↓ (static: does JWT verify before scope set? runtime: forge token → expect reject)
-JWT Identity Findings
-    ↓
-guard-check.js + state-machine.js
-    ↓ (static: single transaction? runtime: violate each gate → expect block)
-Gate Enforcement Findings
-    ↓
-state-machine.js + agent_graph.state_transitions
-    ↓ (static: all transitions valid? runtime: attempt invalid transition → expect reject)
-Task Graph Findings
-    ↓
-config/agents.json
-    ↓ (compare model names, can_assign_to lists to spec §2 text)
-Agent Tier Findings
-    ↓
-merkle-publisher.js + state_transitions.hash column
-    ↓ (static: hash chain formula? runtime: mutate a row → detect broken chain)
-Hash Chain Findings
-    ↓
-SPEC §14 item list
-    ↓ (cross-reference against all findings above)
-Phase 1 Exit Gap Report
+  return (
+    <ErrorBoundary
+      FallbackComponent={({ error }) => <PluginErrorCard error={error} />}
+      resetKeys={[pluginId]}
+    >
+      <Suspense fallback={<div className="plugin-loading" />}>
+        <Plugin />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
 ```
 
-### Key Data Flows Within the Audit
+### Pattern 3: Data Provider Hooks (typed, SWR-backed)
 
-1. **Spec text → testable assertions:** Each spec section is parsed into a checklist of binary claims. Example: §3 says "failed tasks retry up to 3 times, then escalate" — this becomes three assertions: retry counter exists in schema, retry logic increments counter, escalation fires at count=3.
+All data fetching is through typed hooks. Plugins import the hook they need — no prop drilling, no context threading.
 
-2. **Static finding → runtime confirmation:** A static finding of "gate exists" is upgraded to HIGH confidence only after a runtime test confirms it fires. Without runtime confirmation, classification stays MEDIUM.
+```typescript
+// hooks/data/useApprovals.ts
+"use client";
+import useSWR from "swr";
+import { apiFetch } from "@/lib/api-client";
 
-3. **Finding → gap record:** Every gap (FAIL or UNVERIFIED) creates a record with: spec reference, code location, gap severity (CRITICAL/HIGH/MEDIUM/LOW), whether it's CURRENT-PARTIAL or TARGET-FUTURE.
+export interface Draft {
+  id: string;
+  subject: string;
+  body: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+}
 
-4. **Gap record → fix or label:** Gaps must either be closed with a code fix or explicitly labeled "future phase — not Phase 1 exit criteria." Silent gaps are not acceptable (the audit's entire purpose is eliminating silent gaps).
+export function useApprovals() {
+  const { data, error, isLoading, mutate } = useSWR<Draft[]>(
+    "/api/drafts?status=pending",
+    apiFetch,
+    { refreshInterval: 30_000 } // polling fallback, SSE is primary
+  );
 
-## Scaling Considerations
+  return {
+    drafts: data ?? [],
+    isLoading,
+    error,
+    refresh: mutate,
+  };
+}
+```
 
-The audit itself doesn't scale — it's a one-time exercise with incremental follow-ups at phase transitions.
+### Pattern 4: SSE Events Drive SWR Cache Invalidation
 
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| Single auditor (current) | Run all four tiers sequentially; static analysis first, then runtime tests in one environment |
-| Two parallel streams | TIER 0 (schema + principles) in parallel with TIER 1 (identity + gates); merge before TIER 2 |
-| Continuous compliance (post-Phase 1) | Convert audit checklist to automated test suite; run on every PR; spec drift detector already exists in `src/runtime/exploration/domains/security-scan.js` |
+The SSE singleton (already implemented as `useEventStream`) is the primary real-time path. Plugins listen for relevant events and invalidate their SWR cache keys — not maintain separate local state.
 
-### Scaling Priorities
+```typescript
+// plugins/approval-queue/index.tsx
+"use client";
+import { useSWRConfig } from "swr";
+import { useEventStream } from "@/hooks/useEventStream";
+import { useApprovals } from "@/hooks/data/useApprovals";
 
-1. **First priority:** Get TIER 0 and TIER 1 findings documented before starting TIER 2. Incorrect schema or broken identity makes higher-tier findings unreliable.
-2. **Second priority:** Distinguish CURRENT-PARTIAL from TARGET-FUTURE explicitly. This prevents wasted effort fixing items that are intentionally deferred to Phase 2.
+export default function ApprovalQueuePlugin() {
+  const { drafts, isLoading } = useApprovals();
+  const { mutate } = useSWRConfig();
+
+  // SSE invalidation: when a draft_ready event arrives, refresh
+  useEventStream("draft_ready", () => {
+    mutate("/api/drafts?status=pending");
+  });
+
+  // render drafts...
+}
+```
+
+This avoids maintaining duplicated state: SWR is the cache, SSE is the invalidation signal.
+
+### Pattern 5: react-grid-layout with External State
+
+Layout state lives in `useWorkspace`, not inside react-grid-layout. The grid is a controlled component.
+
+```typescript
+// hooks/useWorkspace.ts
+"use client";
+import { useState, useCallback } from "react";
+import useSWR from "swr";
+import type { Layout } from "react-grid-layout";
+
+export interface WorkspaceConfig {
+  id: string;
+  name: string;
+  layout: Layout[];
+  pluginConfigs: Record<string, unknown>; // per-plugin opaque config
+}
+
+export function useWorkspace(memberId: string) {
+  const { data, mutate } = useSWR<WorkspaceConfig>(
+    `/api/workspaces?member=${memberId}`,
+    apiFetch
+  );
+
+  const updateLayout = useCallback(async (newLayout: Layout[]) => {
+    const updated = { ...data!, layout: newLayout };
+    await mutate(
+      fetch("/api/workspaces", {
+        method: "POST",
+        body: JSON.stringify(updated),
+      }).then(r => r.json()),
+      { optimistic: true }
+    );
+  }, [data, mutate]);
+
+  return { workspace: data, updateLayout };
+}
+```
+
+react-grid-layout v2 receives `layout` as a prop and calls `onLayoutChange` on every drag/resize — pure external state pattern.
+
+### Pattern 6: Command Palette as Global Overlay
+
+cmdk mounts once at the shell level, not inside any plugin. It receives data from hooks and routes actions.
+
+```typescript
+// components/shell/CommandPalette.tsx
+"use client";
+import { Command } from "cmdk";
+import { useApprovals } from "@/hooks/data/useApprovals";
+import { WORKSPACE_PRESETS } from "@/lib/workspace-presets";
+
+export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { drafts } = useApprovals();
+
+  return (
+    <Command.Dialog open={open} onOpenChange={onClose}>
+      <Command.Input placeholder="Search workspaces, drafts, plugins..." />
+      <Command.List>
+        <Command.Group heading="Workspaces">
+          {WORKSPACE_PRESETS.map(p => (
+            <Command.Item key={p.id} onSelect={() => { /* switch workspace */ }}>
+              {p.name}
+            </Command.Item>
+          ))}
+        </Command.Group>
+        <Command.Group heading="Pending Drafts">
+          {drafts.slice(0, 5).map(d => (
+            <Command.Item key={d.id} onSelect={() => { /* open approval queue */ }}>
+              {d.subject}
+            </Command.Item>
+          ))}
+        </Command.Group>
+      </Command.List>
+    </Command.Dialog>
+  );
+}
+```
+
+---
+
+## Data Flow
+
+### Request Flow
+
+```
+User interaction in plugin
+  │
+  ├─► [read] useXxx() hook → SWR cache hit → render
+  │                        → cache miss → fetch(OPS_API_URL + path) → cache → render
+  │
+  └─► [write] useMutationHook() → POST OPS_API_URL/path (guardCheck on API server)
+                                → SWR mutate() invalidates read cache
+                                → re-render
+```
+
+### State Management
+
+There is no global client state store (no Zustand, no Redux). State is distributed:
+
+| State Type | Owner | Mechanism |
+|-----------|-------|-----------|
+| Server data (agents, drafts, costs) | SWR cache | Per-hook, key = API URL |
+| Real-time updates | SSE singleton (`useEventStream`) | Invalidates SWR keys |
+| Workspace layout | `useWorkspace` + Postgres | SWR with optimistic updates |
+| SSE connection status + global counters | `EventStreamProvider` (existing) | React context |
+| Command palette open/closed | `WorkspaceShell` | useState, no context needed |
+| Plugin-level ephemeral state | Each plugin component | useState / useReducer |
+
+### Key Data Flows
+
+**Flow A: Approval Queue — read path**
+```
+ApprovalQueuePlugin mounts
+→ useApprovals() → SWR checks cache
+→ fetch GET /api/drafts?status=pending → port 3001
+→ data renders in plugin
+→ SSE "draft_ready" arrives → mutate("/api/drafts?status=pending")
+→ SWR refetches → plugin re-renders with new draft
+```
+
+**Flow B: Draft Approval — write path**
+```
+Board member clicks "Approve" in ApprovalQueuePlugin
+→ useApproveDraft(id) → POST /api/drafts/:id/approve → port 3001
+→ API runs guardCheck (G1-G8, existing infrastructure)
+→ 200 OK → SWR mutate() → optimistic update in UI
+→ SSE "campaign_approved" arrives → secondary confirmation refresh
+```
+
+**Flow C: HALT — safety-critical write path**
+```
+Board member activates HaltControlPlugin HALT button
+→ useHaltToggle() → POST /api/halt → port 3001
+→ guardCheck: autonomy level check, board auth
+→ Response + SSE "halt_triggered" → UI reflects halt state
+→ All agent plugins show halted indicator via useHaltStatus() SSE invalidation
+```
+
+**Flow D: Workspace persistence**
+```
+Board member drags plugin to new position in react-grid-layout
+→ onLayoutChange fires → useWorkspace.updateLayout(newLayout)
+→ Optimistic local update (grid re-renders immediately)
+→ POST /api/workspaces with serialized layout → board-side Postgres
+→ On next login: GET /api/workspaces → restore exact layout
+```
+
+**Flow E: SSE reconnection (existing pattern, keep)**
+```
+SSE connection drops (Railway timeout or network)
+→ globalSource.onerror fires
+→ exponential backoff reconnect (1s → 2s → 4s → ... → 30s max)
+→ Reconnect to /api/ops/events
+→ SWR polling (refreshInterval: 30_000) acts as fallback during gap
+```
+
+---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Auditing High-Level Before Foundations
+### Anti-Pattern 1: Global Context for Plugin Data
 
-**What people do:** Start with the most visible feature (e.g., constitutional gates G1-G7) because it's the most discussed, then discover the RLS layer under it is broken.
+**What:** Putting all domain data (drafts, agents, costs) into a single React context tree.
 
-**Why it's wrong:** If agent identity (JWT + RLS) is not enforced, a gate finding of "PASS" is meaningless — an agent could claim a different identity and bypass the gate entirely. Higher-tier findings depend on lower-tier foundations.
+**Why bad:** Every plugin triggers re-render of every other plugin when any data changes. Context is appropriate for session-scoped singletons (auth, SSE status), not domain data.
 
-**Do this instead:** Run TIER 0 schema integrity and TIER 1 identity enforcement first. Only after those pass should you trust TIER 2 gate-level findings.
+**Instead:** Each plugin calls its own typed SWR hook. SWR's per-key caching deduplicates requests — multiple plugins calling `useAgents()` hit the same cache.
 
-### Anti-Pattern 2: Static Analysis Without Runtime Verification
+### Anti-Pattern 2: Plugin Manages Its Own SSE Connection
 
-**What people do:** Read `guard-check.js`, see that G1-G7 logic exists, mark all gates as "implemented."
+**What:** Each plugin creates its own `EventSource` instance.
 
-**Why it's wrong:** `withAgentScope()` in `db.js` has RLS enforcement described as "optional" in the codebase map (CONCERNS.md: "RLS enforcement: partial, policies defined, enforcement optional"). Static presence does not confirm active enforcement.
+**Why bad:** Each plugin would open a separate SSE connection to the same endpoint — browser limits (6 connections per origin for HTTP/1.1) would cause starvation with 12 plugins.
 
-**Do this instead:** For every CURRENT-PARTIAL item, write a runtime test that attempts the violation and confirms the system blocks it. If the block doesn't fire, it's a gap regardless of what the code says.
+**Instead:** The existing `useEventStream` singleton pattern (already in the codebase) is the correct approach — one `EventSource`, shared via module-level listeners.
 
-### Anti-Pattern 3: Conflating "Currently Implemented" with "Target Architecture"
+### Anti-Pattern 3: Storing Layout in react-grid-layout Internal State
 
-**What people do:** Audit SPEC §5 target architecture items (per-agent DB roles, tool integrity hash checks) as if they're Phase 1 requirements, then report them as critical gaps.
+**What:** Treating `react-grid-layout` as the source of truth for layout.
 
-**Why it's wrong:** SPEC §5 explicitly separates "currently implemented" guardrails from "target architecture." Reporting TARGET-FUTURE items as gaps creates noise that obscures real CURRENT-PARTIAL gaps.
+**Why bad:** Layout cannot be persisted to Postgres, preset-switching cannot work, and per-member workspaces are impossible.
 
-**Do this instead:** Apply the four-status classification (CURRENT-IMPLEMENTED, CURRENT-PARTIAL, TARGET-FUTURE, CLAIMED-INCOMPLETE) before assigning severity. Only CURRENT-PARTIAL and CLAIMED-INCOMPLETE items are Phase 1 audit failures.
+**Instead:** `useWorkspace` owns layout state. react-grid-layout is a controlled component receiving `layout` as a prop.
 
-### Anti-Pattern 4: Treating `config/agents.json` as Sufficient Tier Enforcement
+### Anti-Pattern 4: Next.js Server Actions for Plugin Writes
 
-**What people do:** Check that `agents.json` lists the correct models for each tier and mark agent tier enforcement as passing.
+**What:** Using Server Actions (`"use server"`) for approve/reject/halt mutations.
 
-**Why it's wrong:** Config files are advisory at runtime unless code actively reads them and rejects mismatches. The audit must verify that `orchestrator.js` actually rejects an assignment outside its `can_assign_to` list, not just that the list is correctly defined.
+**Why bad:** guardCheck lives in the port 3001 API, not in the Next.js app. Server Actions would create a leaky second enforcement path and bypass existing G1-G8 gate infrastructure.
 
-**Do this instead:** Verify the enforcement path: config is read → validation function exists → invalid assignment fails → work_item is rejected. All four steps, not just step one.
+**Instead:** All mutations go through `fetch(OPS_API_URL + path)` directly, letting the existing API enforce all gates.
+
+### Anti-Pattern 5: SSE Route Handler in Next.js App
+
+**What:** Building an `/api/events/route.ts` in the Next.js app that subscribes to Redis itself.
+
+**Why bad:** This duplicates the existing Redis relay in port 3001 and adds a second hop. The existing `/api/ops/events` on port 3001 already does this correctly. The Next.js app is a consumer, not a relay.
+
+**Instead:** `EventSource` points to `OPS_API_URL + "/api/ops/events"` (proxied through Next.js `rewrites` if same-origin cookies are needed, or hit directly in cross-origin with auth headers).
+
+### Anti-Pattern 6: NextResponse for SSE (if a proxy route is needed)
+
+**What:** Using `NextResponse` to proxy SSE from port 3001 through a Next.js route.
+
+**Why bad:** `NextResponse` buffers the stream, breaking SSE delivery. This has been a known Next.js issue.
+
+**Instead:** If a proxy route is needed (for auth header injection), use `new Response(readableStream, headers)` (standard Web API, not NextResponse) with `X-Accel-Buffering: no` header to prevent nginx buffering on Railway.
+
+---
 
 ## Integration Points
 
-### Spec Sections and Their Code Counterparts
+### Existing Code: Reuse Without Change
 
-| Spec Section | Code Location | Audit Method |
-|-------------|---------------|-------------|
-| §0 Design Principles P1-P6 | Cross-cutting, all `src/` | Static scan, classify each module per principle |
-| §2 Agent Tiers | `config/agents.json`, `src/agents/orchestrator.js` | Config comparison + assignment rejection test |
-| §3 Task Graph | `src/runtime/state-machine.js`, `agent_graph` schema | SQL schema check + invalid transition test |
-| §5 Guardrails (current) | `src/runtime/guard-check.js`, `src/runtime/state-machine.js` | Gate violation test per G1-G7 |
-| §5 Guardrails (target) | `src/runtime/agent-jwt.js`, `src/db.js` | JWT forge test + RLS policy activation check |
-| §12 Schema Isolation | `sql/001-baseline.sql` | grep for cross-schema FK; verify 5 schemas exist |
-| §14 Phase 1 Exit | All of above | Cross-reference against checklist |
-| P3 Transparency | `src/runtime/state-machine.js`, `src/runtime/merkle-publisher.js` | Hash chain mutation test |
-| P4 Boring Infrastructure | All dependencies | Dependency scan: no external message queue, pg/jwt/hash-chain only |
+| Existing | Status | Notes |
+|---------|--------|-------|
+| `hooks/useEventStream.ts` | Keep exactly | Global SSE singleton is correct. Plugins import this directly. |
+| `components/EventStreamProvider.tsx` | Keep exactly | Global counters + status. Mount in RootLayout. |
+| `components/SessionProvider.tsx` | Keep exactly | NextAuth wrapper. |
+| `middleware.ts` | Keep exactly | Auth guard. |
+| `app/api/auth/` | Keep exactly | GitHub OAuth. |
 
-### Internal Audit Boundaries
+### Existing Code: Replace
 
-| Boundary | Communication | Audit Notes |
-|----------|---------------|-------------|
-| Schema audit ↔ Gate audit | Schema must pass before gates are audited | Gates write to `state_transitions`; bad schema = bad gate test |
-| JWT audit ↔ RLS audit | JWT must verify before RLS test | RLS enforcement uses `app.agent_id` set by JWT path |
-| Gate audit ↔ State machine audit | Gates are called inside state transitions | A broken gate found in isolation may pass in context |
-| All components ↔ Phase 1 exit audit | All lower tiers complete | Exit audit is only meaningful when all inputs are clean |
+| Existing | Replacement | Reason |
+|---------|-------------|--------|
+| `components/BoardShell.tsx` | `WorkspaceShell.tsx` | Fixed sidebar nav → plugin grid canvas |
+| `components/NavBar.tsx` | `WorkspaceBar.tsx` | Page links → preset switcher + plugin add |
+| `components/HeaderBar.tsx` | Integrate into WorkspaceBar or keep minimal | Reduce header height for screen real estate |
+| `app/[page]/` (16 pages) | `plugins/[name]/index.tsx` (12 plugins) | Fixed pages → composable plugins |
+
+### New Integrations
+
+| New Component | Integrates With | Notes |
+|---------------|-----------------|-------|
+| `react-grid-layout` | `WorkspaceShell`, `useWorkspace` | Controlled component; layout state external |
+| `cmdk` | `WorkspaceShell` (global keyboard listener), data hooks | Fuzzy search, global actions |
+| `react-error-boundary` | `PluginSlot` | Plugin crash isolation (D6) |
+| `swr` | All data provider hooks | Deduplication, polling fallback, optimistic updates |
+| `board.workspaces` table | `/api/workspaces route`, `useWorkspace` | One new Postgres table; no new schema |
+
+### Mobile Breakpoint
+
+At `< 768px`: `react-grid-layout` breakpoint switches to single-column. `WorkspaceShell` renders one plugin at a time with a swipe gesture or bottom-nav to switch. `mobileFullscreen: true` plugins (Approval Queue, HALT Control) take full viewport.
+
+---
+
+## Build Order (Dependency Chain)
+
+The component dependency chain determines phase ordering:
+
+```
+1. lib/api-client.ts           (no dependencies — fetch wrapper, auth headers)
+   └── 2. hooks/data/*         (depends on api-client)
+       ├── 3. hooks/mutations/* (depends on api-client)
+       ├── 4. hooks/useWorkspace (depends on api-client + Postgres table)
+       └── 5. plugins/*         (depends on data hooks + mutation hooks)
+           └── 6. PluginSlot    (depends on plugin registry)
+               └── 7. WorkspaceShell (depends on PluginSlot + react-grid-layout + useWorkspace)
+                   ├── 8. CommandPalette (depends on WorkspaceShell mounting + data hooks)
+                   └── 9. WorkspaceBar  (depends on WorkspaceShell + presets)
+```
+
+**Phase implication:** You cannot build plugins (step 5) before data hooks (step 2-3). The shell (step 7) must exist before the command palette (step 8) can be wired. The correct phase structure is:
+
+- **Phase 1:** Shell scaffolding — WorkspaceShell, PluginSlot, ErrorBoundary, registry, one stub plugin to prove the harness
+- **Phase 2:** Data layer — api-client, all 10 data hooks, all mutation hooks
+- **Phase 3:** Core plugins — ApprovalQueue (P0), HaltControl (P0), then remaining 10 plugins
+- **Phase 4:** Command palette, workspace persistence, presets, mobile breakpoints
+- **Phase 5:** Legacy decommission — remove inbox-dashboard service, redirect domain
+
+Phases 1 and 2 can partially overlap (api-client can be built before the shell), but plugins need both shell + data layer before they're shippable.
+
+---
 
 ## Sources
 
-- Optimus SPEC.md v0.7.0 (canonical, located at `autobot-spec/SPEC.md`)
-- `.planning/codebase/ARCHITECTURE.md` — codebase layer map and data flow documentation
-- `.planning/codebase/CONCERNS.md` — known gaps including JWT RLS partial enforcement, completeness check removed
-- `.planning/codebase/STRUCTURE.md` — file locations for each audit component
-- [PostgreSQL RLS Documentation](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) — RLS policy verification methodology (HIGH confidence)
-- [Testing RLS with Atlas](https://atlasgo.io/faq/testing-rls) — non-superuser testing requirement, policy activation verification
-- [Hash Chain Audit Log Integrity](https://dev.to/veritaschain/your-audit-logs-are-lying-to-you-6-properties-that-make-logs-actually-verifiable-3808) — six properties of verifiable logs; deletion detection via append-only verification
-- [AuditableLLM: Hash-Chain Audit Framework](https://www.mdpi.com/2079-9292/15/1/56) — structural vs behavioral verification levels for LLM audit systems
-- [AI Governance: Infrastructure vs Prompt-Based Controls](https://air-governance-framework.finos.org/mitigations/mi-16_preserving-source-data-access-controls-in-ai-systems.html) — infrastructure enforcement is the only reliable method; prompt-based controls are easily bypassed (aligns with Optimus P2)
-- [Risk-Based Audit Methodology](https://auditboard.com/blog/risk-based-auditing) — bottom-up audit planning, foundations before higher-tier components
-
----
-*Architecture research for: Optimus spec compliance audit*
-*Researched: 2026-04-01*
+- Next.js 15 App Router architecture patterns: https://dev.to/teguh_coding/nextjs-app-router-the-patterns-that-actually-matter-in-2026-146
+- SSE in Next.js 15 App Router: https://damianhodgkiss.com/tutorials/real-time-updates-sse-nextjs
+- SSE buffering fix (NextResponse vs Response, X-Accel-Buffering): https://medium.com/@oyetoketoby80/fixing-slow-sse-server-sent-events-streaming-in-next-js-and-vercel-99f42fbdb996
+- react-grid-layout v2 TypeScript RFC and hooks API: https://github.com/react-grid-layout/react-grid-layout/blob/master/rfcs/0001-v2-typescript-rewrite.md
+- react-grid-layout GitHub: https://github.com/react-grid-layout/react-grid-layout
+- cmdk / shadcn Command: https://www.shadcn.io/ui/command
+- Workspace-based multi-panel architecture in Next.js: https://medium.com/@ruhi.chandra14/building-multi-panel-interfaces-in-next-js-using-a-workspace-based-architecture-4209aefff972
+- react-error-boundary TypeScript pattern: https://react-typescript-cheatsheet.netlify.app/docs/basic/getting-started/error_boundaries/
+- Existing codebase: `board/src/hooks/useEventStream.ts`, `board/src/components/EventStreamProvider.tsx`, `board/src/app/layout.tsx` (read directly — HIGH confidence)

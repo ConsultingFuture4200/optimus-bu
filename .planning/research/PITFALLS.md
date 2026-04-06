@@ -1,278 +1,236 @@
 # Pitfalls Research
 
-**Domain:** Spec compliance audit and refactoring of a live governed agent system
-**Researched:** 2026-04-01
-**Confidence:** HIGH (grounded in actual codebase analysis from `.planning/codebase/`)
+**Domain:** Plugin-based dashboard rebuild (Next.js 15 + react-grid-layout + SSE)
+**Researched:** 2026-04-05
+**Confidence:** HIGH (Railway SSE limits confirmed from official docs; rgl hydration/touch issues confirmed from GitHub issues; Next.js patterns from official docs and verified community sources)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Breaking the Live Pipeline by Activating Dormant Enforcement
-
-**What goes wrong:**
-The codebase already has JWT infrastructure (`agent-jwt.js`), RLS policies in SQL, and `withAgentScope()` — all present but not fully enforced. An auditor finds "RLS not enforced" in the gap list, marks it as a compliance violation, and activates enforcement in a single commit. The pipeline immediately halts: agents calling `transitionState()` without a valid JWT in the session context get blocked by newly active RLS policies. Every in-flight work item is stuck.
-
-This is the highest-risk pitfall in this codebase. The CONCERNS file explicitly flags: "RLS enforcement: partial (policies defined, enforcement optional)." Flipping this switch while agents are processing live email is a breaking change disguised as a configuration change.
-
-**Why it happens:**
-Dormant infrastructure looks like a simple config toggle. Auditors think "the code is already there, we just need to turn it on." What they miss is that activation requires every callsite to pass a valid session context, and that the `withAgentScope()` function is only called in some paths, not all. Every uncovered callsite becomes an instant breakage.
-
-**How to avoid:**
-1. Before any enforcement activation: grep every callsite that calls `query()` directly and verify it is wrapped in `withAgentScope()`.
-2. Test enforcement activation against a full pipeline run in Docker with a cloned database — not against the live system.
-3. Use a feature flag (`ENFORCE_RLS=true`) so activation is independently deployable and reversible without a code change.
-4. Activate enforcement in a staging environment for a minimum of one full pipeline cycle (triage → draft → review → approval) before production.
-5. Have a rollback plan: the feature flag must be the only change in the commit.
-
-**Warning signs:**
-- Agent loop logs show `permission denied` or `no rows returned` after a schema change
-- Work items stuck in `assigned` state and not advancing
-- `guardCheck()` throwing errors where it previously passed
-- `withAgentScope()` not present in all agent handler callsites
-
-**Phase to address:** Phase dealing with JWT/RLS compliance gap (SPEC §5 target architecture). Must be the first item in that phase, with a full pipeline smoke test as the acceptance criterion.
+These cause rewrites, safety incidents, or total feature loss.
 
 ---
 
-### Pitfall 2: Conflating "Currently Implemented" with "Target Architecture" in Audit Scope
+### CP-1: react-grid-layout breaks on SSR — hydration mismatch crashes the shell
 
-**What goes wrong:**
-SPEC §5 describes two distinct states: the current guardrail system (G1-G7 via `guard-check.js`) and the target architecture (per-agent DB roles, JWT RLS, tool allow-lists, content sanitization). An auditor treating both as Phase 1 exit criteria will waste weeks building per-agent DB roles (explicitly Phase 2 per CONCERNS) and over-scope the audit into new-feature territory. The PROJECT.md constraint is explicit: "No feature creep — audit and fix only."
+**What goes wrong:** react-grid-layout uses `window` and computes pixel widths at mount time. When Next.js App Router renders the grid on the server, the layout positions do not match what the client computes after mount. React throws a hydration mismatch, which in Next.js 15 / React 19 is a hard error that crashes the entire component tree — taking down the whole workspace shell, not just one plugin.
 
-**Why it happens:**
-The spec is written as a continuous document. Without a clear "Phase 1 boundary" marker inside it, auditors read the target architecture description and assume it all needs to be present now. The distinction lives in `CLAUDE.md` and `CONCERNS.md`, not in SPEC.md itself.
+**Why it happens:** `WidthProvider` (legacy) and `useContainerWidth` (v2) both measure the DOM container width using `ResizeObserver`. There is no DOM on the server. The initial `width` defaults to `1280px`, which almost never matches the real container width, causing mismatched `transform: translate()` values between server HTML and first client render.
 
 **How to avoid:**
-1. Before any audit work begins, create an explicit Phase 1 vs. Phase 2+ scope map by cross-referencing SPEC.md sections against CONCERNS.md's "Fix Approach" and "Timeline" fields.
-2. For each spec gap found, classify it as: (a) must fix for Phase 1 exit, (b) explicitly deferred to Phase 2, or (c) genuinely unaddressed.
-3. Treat CONCERNS.md as the authoritative scope boundary — it already contains board-reviewed timelines.
-4. Mark any spec section where the spec says "target" or "Phase 2" as out of scope in the audit checklist before starting.
+- Import the grid shell exclusively with `dynamic(() => import('./WorkspaceShell'), { ssr: false })`. This is the one legitimate `ssr: false` case in this codebase — the grid is purely a client layout surface.
+- Do not use `WidthProvider` HOC from the legacy path. Use `useContainerWidth` from the v2 API and attach `containerRef` to the outer div.
+- Keep all plugin content components as server components where possible; only the grid container needs the `'use client'` boundary.
 
 **Warning signs:**
-- An audit task is creating new infrastructure (per-agent DB roles, token revocation list) rather than verifying or fixing existing code
-- The refactoring plan exceeds the "fix all identified compliance gaps" scope from PROJECT.md
-- Board review items are accumulating because auditors are making new architectural decisions
+- "Hydration failed" errors in the browser console on first load
+- Layout items appear in wrong positions for one frame then snap
+- The entire workspace page goes blank instead of showing a shell
 
-**Phase to address:** Pre-audit scoping phase (before any code changes). This is a planning discipline, not a code fix.
+**Phase to address:** Phase 1 (shell scaffold). Get this right before building any plugins.
 
 ---
 
-### Pitfall 3: Losing Hash-Chain Integrity During Schema Refactoring
+### CP-2: Railway silently drops SSE connections — HALT button becomes unresponsive
 
-**What goes wrong:**
-The `agent_graph.state_transitions` table is hash-chained and append-only. Any refactoring that adds a column, changes a column type, or reorders data in this table can break the chain integrity if the hash computation includes schema-dependent fields. A migration that adds a `NOT NULL` column with a default value retroactively changes what "the previous row" looks like to any integrity checker that re-reads the table.
+**What goes wrong:** Railway's load balancer enforces a **15-minute maximum HTTP connection duration** for both SSE and WebSocket connections. The `EventSource` API auto-reconnects, but during the reconnect window (which can be 1–30 seconds depending on the retry interval), real-time agent status updates stop flowing. If the HALT control plugin is driven by SSE and the connection dropped silently, a board member pressing HALT may see stale state.
 
-Similarly, the `inbox.drafts` → `agent_graph.action_proposals` migration (removing the deprecated view) requires care: if any audit endpoint queries `inbox.drafts` and the view is dropped while it still has consumers, audit queries fail silently and integrity cannot be verified.
+Additionally, Railway has documented a secondary limit: connections are dropped after approximately **1 MB of transferred data**, suspected to be at the gateway/load balancer layer. This is separate from the 15-minute cap and can happen much sooner on high-volume event streams.
 
-**Why it happens:**
-Hash-chain integrity is tested in isolation (unit tests for `guard-check.test.js`) but not in integration with schema migrations. Developers assume "append-only means safe to add columns" — true for the data, but potentially false for hash computation if the hash includes a row's full column set.
+On top of Railway's limits, intermediate proxies (corporate networks, VPNs) may buffer the entire SSE response until the connection closes — meaning no events arrive until disconnect, at which point all events arrive at once. This is the "production SSE is still not ready" failure mode described in post-mortems.
+
+**Why it happens:** Railway's infrastructure enforces HTTP duration limits that are appropriate for normal request-response cycles but break long-lived streaming connections. Proxy buffering is a separate, uncontrollable network-layer issue.
 
 **How to avoid:**
-1. Before any migration to `agent_graph.state_transitions`, verify what fields are included in the hash computation by reading `merkle-publisher.js` and `infrastructure.js`.
-2. After every schema migration on hash-chained tables, run a full chain integrity check (not just the happy-path unit test).
-3. Migrate the `inbox.drafts` view removal in two commits: (a) migrate all code to `agent_graph.action_proposals`, (b) verify zero references to `inbox.drafts` remain, then (c) drop the view.
-4. Add a CI check: grep for `inbox.drafts` references before any migration that removes the view.
+- Implement mandatory client-side reconnect with exponential backoff. The native `EventSource` auto-reconnects but does not provide backoff — use `reconnecting-eventsource` or a custom implementation.
+- Send a server-side heartbeat comment (`": keep-alive\n\n"`) every 15–20 seconds. This (a) keeps the connection alive through idle periods and (b) forces proxies to flush their buffers rather than accumulate data.
+- Set `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` headers on the SSE Route Handler response. The `no-transform` directive signals proxies not to buffer.
+- Include event IDs and handle `Last-Event-ID` on reconnect so replayed events are not missed.
+- For P0 safety features (HALT, approval state), **always poll as a fallback**. SSE drives the live display; a 10-second REST poll is the safety net. Never make HALT depend solely on SSE state being current.
+- The SSE Route Handler in Next.js App Router must return the `Response` immediately before starting async work — chunks buffered until `res.end()` is a known issue with the Pages Router API routes; use Route Handlers (`app/api/.../route.ts`) instead.
 
 **Warning signs:**
-- Merkle proof validation fails after a migration
-- `spec-drift-detector.js` reports unexpected schema changes
-- Audit endpoint returns gaps where records should be continuous
-- Hash of `state_transitions` row does not match recomputed value
+- Agent status stops updating without a visible error
+- SSE connection shows "connected" in DevTools but no events arrive
+- Events arrive in large batches rather than individually
 
-**Phase to address:** Schema cleanup phase (deprecated view removal and any migration that touches `state_transitions`).
+**Phase to address:** Phase 1 (data provider hooks). Build reconnect + heartbeat + fallback polling from day one. Do not defer to "polish phase."
 
 ---
 
-### Pitfall 4: Audit Scope Creep from "Fix While You're In There" Impulse
+### CP-3: Layout persistence schema has no version field — old layouts silently corrupt new plugin configs
 
-**What goes wrong:**
-An auditor finds that `src/api.js` (2062 lines) contains webhook signature verification code that's incorrectly structured relative to P2 (infrastructure enforces). The correct fix is small — enforce at the DB level or in a middleware, not in the route handler. But the file is 2062 lines and "clearly needs refactoring." The auditor begins extracting `routes/webhooks.js`, `routes/auth.js`, etc. Three days later, the audit has become a large-scale refactoring with multiple unrelated changes, and it's impossible to bisect which change introduced a regression.
+**What goes wrong:** The `board.workspaces` table stores a JSON layout blob. When a plugin is renamed, removed, or its config shape changes, existing persisted workspaces reference plugin IDs that no longer exist or carry config keys that the plugin no longer accepts. The grid renders blank panels where plugins should be, or worse, silently loads stale config that causes confusing behavior.
 
-**Why it happens:**
-Compliance audits reveal code smells. The instinct to fix everything visible is natural and well-intentioned. But each additional change increases blast radius and reduces the traceability of individual fixes.
+**Why it happens:** Teams add a `layout` JSONB column and persist `{ items: [...] }` without a `schemaVersion` field. When they rename a plugin from `"inbox-triage"` to `"approval-queue"`, every saved workspace now has orphaned item references. There is no migration path because there is no version to migrate from.
 
 **How to avoid:**
-1. Strict rule: one spec violation per commit. The commit message must name the spec section being addressed.
-2. When you find a secondary issue during an audit fix, open a tracked work item for it — do not fix it inline.
-3. The PROJECT.md constraint is explicit: "Rewriting working code for style preferences — only fix spec violations." File size is a style concern, not a spec violation.
-4. Use atomic commits as the accountability mechanism: if a commit cannot be described as "fixes SPEC §X compliance gap Y," it does not belong in this audit.
+- Include a `schemaVersion: number` field at the root of every persisted workspace JSON from day one. Start at `1`.
+- Write a `migrateWorkspace(raw, currentVersion)` function that transforms old shapes forward. Even if v1→v2 is a no-op, the function must exist.
+- When deserializing a workspace, filter out any plugin items whose `type` is not in the current registry. Render a recoverable "plugin not found" placeholder instead of crashing.
+- Store plugin configs as `{ pluginType: string, version: number, config: object }` per item, not a flat blob.
 
 **Warning signs:**
-- A commit touches more than 3 files for a single spec violation fix
-- PR descriptions mention "while I was in there"
-- The audit milestone has commits that don't reference a spec section
-- Refactoring tasks are appearing in the backlog without a corresponding spec gap
+- Board member's saved workspace loads with blank or missing panels
+- No error thrown — just empty grid cells
+- A plugin rename in code silently invalidates all saved layouts containing it
 
-**Phase to address:** Every phase. This is a process discipline that must be enforced from the first commit.
+**Phase to address:** Phase 1 (workspace persistence schema). Schema versioning is free to add at creation time and extremely expensive to retrofit.
 
 ---
 
-### Pitfall 5: Over-Engineering Enforcement to Match the Target Architecture Prematurely
+### CP-4: Error boundaries do not catch async errors or event handler failures
 
-**What goes wrong:**
-SPEC §5 target architecture specifies JWT-scoped agent identity with per-agent DB roles. The current system uses a shared `autobot_agent` role with JWT signing but no per-agent role enforcement. An auditor reads the spec, sees the gap, and implements full per-agent roles — creating 11 PostgreSQL roles, modifying connection strings for each agent, and updating `withAgentScope()` to switch roles dynamically. This is Phase 2 work (per CONCERNS.md). It introduces significant operational complexity, requires new migration infrastructure, and creates new failure modes in a live system.
+**What goes wrong:** React error boundaries only catch errors that occur during render, in lifecycle methods, and in constructors. They do not catch errors from `useEffect`, async data fetches, event handlers, or promise rejections. A plugin that crashes during a button click (e.g., an approval action throwing a network error) will bubble up uncaught, potentially crashing the entire workspace rather than just showing the plugin's error card.
 
-The enforcement that is *needed* for Phase 1 exit is much smaller: activate RLS using the existing `autobot_agent` role with `app.agent_id` session variable. The full per-agent role isolation can wait.
-
-**Why it happens:**
-The spec describes the target cleanly and completely. It is easy to implement the target when you have the spec in front of you. It is harder to identify the minimum slice that closes the Phase 1 exit criterion without building the rest.
+**Why it happens:** The design principle D6 (plugin crash isolation) is correct, but error boundaries alone do not fulfill it. Developers wrap a plugin in `<ErrorBoundary>` and assume it is isolated — but the boundary only covers render-time errors.
 
 **How to avoid:**
-1. For every compliance gap, write down the minimum code change that satisfies the Phase 1 exit criterion — not the target architecture.
-2. Cross-reference ADR-018 explicitly: it specifies what is Phase 1 vs. Phase 2 for JWT/RLS.
-3. Use "implement the minimum, document the rest" — add a comment referencing the ADR when deferring Phase 2 work, so it is not silently lost.
-4. Present Phase 1 vs. Phase 2 scope to both board members before starting any JWT/RLS work (board decision 2026-03-07 already covers this; verify scope hasn't drifted).
+- Wrap all plugin async operations in try/catch with explicit error state.
+- Use `react-error-boundary` (not a hand-rolled class component) — it provides `useErrorBoundary()` hook, which lets async code manually trigger the boundary's fallback UI via `showBoundary(error)`.
+- Each plugin's data provider hook must catch fetch errors and return `{ data: null, error: Error }` — never throw from a hook unconditionally.
+- Never place the error boundary above the grid shell. One boundary per plugin slot, not one boundary for the workspace.
 
 **Warning signs:**
-- New PostgreSQL roles appearing in migrations during Phase 1
-- Connection string management becoming more complex
-- Agent startup sequence adding new JWT ceremony steps not in ADR-018 Phase 1
-- Board review items about infrastructure changes that were supposed to be "config only"
+- A button click in one plugin causes the entire workspace to go blank
+- Console shows uncaught promise rejection instead of a contained error card
+- The error boundary fallback never appears, even when plugins clearly crash
 
-**Phase to address:** JWT/RLS enforcement phase. Scope must be locked before writing any code.
+**Phase to address:** Phase 1 (plugin lifecycle). Establish the `useErrorBoundary` pattern in the plugin host contract before any plugin is built.
 
 ---
 
-### Pitfall 6: Breaking the Audit Trail by Modifying State Transition Logic
+### CP-5: HALT control is gated behind the SSE-driven state read — safety-critical action depends on real-time data accuracy
 
-**What goes wrong:**
-The `transitionState()` + `guardCheck()` atomic transaction is the heart of P2 enforcement. If a refactor separates these two operations — even temporarily, even "just to test" — you create a window where state transitions can occur without guard checks. In a live system processing real email, this window may be exploited (or may cause data integrity issues) even if it is only open for minutes.
+**What goes wrong:** If the HALT plugin only shows the HALT button when agent status is "running" (as read from SSE), and the SSE connection has silently dropped, the HALT button disappears or is disabled — exactly when it may be needed most.
 
-A second form: changing the order of operations inside the transaction (e.g., running `guardCheck()` after `INSERT INTO state_transitions` instead of before) produces an audit log that claims transitions were authorized when they were not yet checked at the time of logging.
-
-**Why it happens:**
-The atomicity requirement is documented in SPEC §5 but is easy to violate accidentally during refactoring. Developers testing individual components often stub out one side of the pair, then forget to restore the requirement.
+**Why it happens:** Developers conflate "display state" with "action precondition." SSE-driven state is appropriate for display ("3 agents running"). It is not appropriate as the sole gate for safety-critical writes.
 
 **How to avoid:**
-1. Never stub or remove `guardCheck()` from `transitionState()` for any reason, including tests. Integration tests must exercise the real guard check.
-2. Any change to `state-machine.js` that touches the `BEGIN`/`COMMIT` block must have a corresponding test that verifies guard check runs before the state transition is committed.
-3. Code review gate: no PR that modifies `transitionState()` is merged without explicit sign-off that atomicity is preserved.
+- The HALT button must be always-visible and always-enabled regardless of SSE connection state.
+- The HALT action must be a direct REST POST that goes through the existing guardCheck infrastructure — it does not depend on SSE state.
+- SSE state informs the display (badge counts, agent status) but never disables the kill switch.
+- Show a visible "disconnected" indicator when SSE drops, but keep the HALT button functional.
 
 **Warning signs:**
-- Unit tests for state machine that stub `guardCheck` entirely
-- `state_transitions` rows appearing without corresponding `guard_check_log` entries
-- `transitionState()` catching and swallowing guard check errors rather than re-throwing
+- HALT button grayed out or absent during SSE reconnect windows
+- HALT action calls a local state derived from SSE rather than calling the API directly
 
-**Phase to address:** Any phase that touches guardrail enforcement or state machine code.
+**Phase to address:** Phase 1 (HALT plugin). Must be reviewed explicitly before HALT plugin ships.
 
 ---
 
 ## Technical Debt Patterns
 
-Shortcuts that seem reasonable but create long-term problems.
-
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Keep `inbox.drafts` view instead of migrating consumers | Avoid breaking dashboard code | Two sources of truth, audit confusion, view adds latency to every draft query | Never — deadline is Phase 1 end per CONCERNS.md |
-| Activate RLS without testing all agent callsites | Quick compliance checkbox | Pipeline halt, work items stuck, potentially corrupt state transitions | Never in production |
-| Fix secondary code quality issues inline with spec compliance fixes | Cleaner code faster | Untraceable regressions, audit commits become un-bisectable | Never during a compliance audit |
-| Skip integration test for hash-chain integrity after migration | Faster migration deployment | Silent chain corruption discovered only during an audit or incident | Never for any migration touching `state_transitions` |
-| Mark Phase 2 items as "in progress" to satisfy Phase 1 exit criteria | Looks compliant sooner | Board is misled, Phase 1 exit criteria are not actually met | Never |
-| Use in-memory blocklist for token revocation instead of DB table | Faster implementation | Revocations lost on restart, does not survive HALT/resume cycle | Acceptable for Phase 1 per ADR-018 if HALT clears the blocklist |
+| Pattern | How It Starts | Where It Ends |
+|---------|--------------|---------------|
+| `'use client'` creep | One plugin needs a hook, parent gets marked `'use client'` | Entire plugin tree is client-rendered, SSR gains disappear |
+| Flat plugin registry object | `const plugins = { approval: ApprovalPlugin }` hardcoded in one file | Every new plugin requires editing the registry file, PRs conflict |
+| Workspace JSON stored as opaque blob | `JSON.stringify(layout)` into one column | Cannot query, migrate, or validate individual plugin configs |
+| Width hardcoded as `1280` | Forgot to attach `containerRef` from `useContainerWidth` | Grid renders with wrong column widths until window resize |
+| SSE connection managed in component | `new EventSource(...)` inside a `useEffect` | Multiple connections opened on re-render, Railway connection limit hit |
 
 ---
 
 ## Integration Gotchas
 
-Common mistakes when connecting enforcement to live infrastructure in this system.
-
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| `withAgentScope()` + RLS activation | Calling `SET app.agent_id` without verifying JWT first, allowing unauthenticated agents to set arbitrary IDs | Verify JWT signature in `withAgentScope()` before `SET app.agent_id`, reject if verification fails |
-| `state_transitions` hash chain + migrations | Running `ALTER TABLE` on `state_transitions` without checking what fields are hashed | Read `merkle-publisher.js` to confirm hash inputs before any migration on that table |
-| `inbox.drafts` view removal | Dropping the view before updating all API endpoints and dashboard pages that reference it | Grep for all consumers, migrate in order: API routes first, dashboard second, then drop |
-| Linear webhook security gap | Patching the fallback acceptance in `api.js` inline with other compliance fixes | Treat as a separate security fix with board review; do not mix with spec compliance commits |
-| Constitutional gate G3 (voice tone threshold) | Changing the hardcoded `0.80` threshold as part of a "make it configurable" refactor during the audit | Only change if SPEC.md requires configurability; otherwise, leave it — this is a style improvement, not a compliance gap |
-| `agent-loop.js` completeness check | Re-implementing the removed completeness check during the audit as a compliance fix | The removed check was governance theater; replacing it is a new feature (out of scope for Phase 1 audit) |
+| Area | Gotcha | Mitigation |
+|------|--------|------------|
+| react-grid-layout v2 API | `WidthProvider` HOC no longer the canonical path — now `useContainerWidth` hook. Legacy HOC still works but deprecated | Use v2 hook API from the start |
+| Next.js Route Handler + SSE | `res.write()` buffering pattern from Pages Router does not work — must use `ReadableStream` with `Response` | Use `new Response(new ReadableStream(...))` pattern in App Router Route Handlers |
+| cmdk `Command.Dialog` | `open` prop must be `false` on the server or SSR throws hydration error | Initialize open state as `false`; never derive from server-rendered context |
+| react-grid-layout + mobile touch | `touch-action: none` is added to all draggable items, which blocks page scroll on mobile — even when drag mode is off | Set `isDraggable={false}` on mobile breakpoint (`<768px`) and remove `touch-action: none` via CSS override |
+| Responsive breakpoint layouts | `ResponsiveGridLayout` stores separate layout arrays per breakpoint — if you only save the `lg` layout and restore it, mobile layouts are missing and RGL falls back to interpolation, which is often wrong | Persist all breakpoint layouts from `onLayoutChange(layout, allLayouts)` — use `allLayouts`, not `layout` |
+| Plugin context provider placement | Wrapping the entire `<html>` or `<body>` in a plugin context provider forces the whole document to be client-rendered | Scope providers to the workspace route segment only; keep root layout as server component |
+| Redis → SSE fan-out | If the Next.js API route that relays Redis pub/sub events crashes, all SSE clients lose events with no visibility | Add a health check endpoint; log SSE relay errors explicitly; fall back to polling |
 
 ---
 
 ## Performance Traps
 
-Patterns that work at small scale but surface during audit-driven refactoring.
-
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Activating full JWT verification on every `query()` call | Agent loop latency doubles; PGlite single-connection bottleneck worsens | Only enforce JWT in `withAgentScope()` for sensitive queries; not on every SELECT | Immediately on PGlite; at ~3 concurrent agents on real Postgres |
-| Running `merkle-publisher.js` hash integrity check on startup | Startup takes 60+ seconds; blocks API from accepting requests | Run integrity check as background job, not in startup critical path | At ~10k `state_transitions` rows |
-| Dashboard query volume increase from new audit endpoints | Dashboard timeout rate increases; stale-while-revalidate cache misses increase | Add new audit endpoints to the `cachedQuery` pattern in `api.js` with appropriate TTLs | When audit phase adds 3+ new API endpoints querying `state_transitions` |
-| Voice bootstrap blocking startup during refactor | API unavailable for 60+ seconds after each restart | Lazy-load voice profile on first triage request, not at startup | At 10k+ sent emails in corpus |
+| Trap | Trigger | Impact | Prevention |
+|------|---------|--------|------------|
+| Layout recalc on every plugin state update | Plugin state stored in grid-level state instead of per-plugin state | Every agent status update re-renders all 12 plugins | Keep plugin data state inside each plugin; pass only layout props to the grid |
+| `onLayoutChange` writes to Postgres on every drag event | Debouncing not applied to the persistence callback | Database hammered during drag operations; Railway connection pool exhausted | Debounce layout persistence by 500–1000ms; write on drag stop, not drag move |
+| WidthProvider / `useContainerWidth` on window resize | Not using `ResizeObserver` on container — falling back to window resize event | Entire grid recalculates on any window resize, including unrelated browser chrome changes | Ensure `containerRef` is attached; `useContainerWidth` uses `ResizeObserver` on the element, not `window` |
+| All plugins subscribe to SSE stream simultaneously | 12 plugins each opening their own `EventSource` | 12 connections to Railway; browser 6-connection HTTP/1.1 limit blocks other fetches | One SSE connection at the workspace level; broadcast to plugins via React context or Zustand |
+| SSE event fan-out via re-render | SSE message triggers state update in a high-level context, all plugins re-render | Frame drops visible when high-frequency events arrive | Use `useSyncExternalStore` or Zustand for SSE state; avoid `useState` in the SSE context provider |
 
 ---
 
 ## Security Mistakes
 
-Domain-specific security issues for a governed agent system undergoing compliance audit.
-
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Activating RLS while agents hold long-lived transactions | Agent with valid session pre-dates RLS activation; RLS checks run on new transactions only, old in-flight transactions bypass enforcement | Drain all in-flight work items to `completed` or `blocked` state before activating RLS; restart agents after activation |
-| Treating the audit itself as an agent-level permission | Audit code running as `autobot_agent` role can read and modify any agent's work | Audit reads should use a dedicated read-only role; never run audit mutations in the agent schema |
-| Fixing the Linear HMAC fallback by removing it entirely | If the fallback is removed before Linear support resolves the signing issue, Linear webhook ingestion stops working | Keep the fallback; add rate limiting and source IP allowlist as interim measures; do not remove until HMAC validates correctly |
-| Committing `.env` with audit credentials | Secrets exposed in git history | `.gitignore` covers this; verify before any commit that touches `autobot-inbox/.env.example` |
-| Adding new `permission_grants` with `resource_id = '*'` during audit | Overly broad access granted to fix a narrow compliance gap | Audit permission grants by checking for `resource_id = '*'` before and after every migration |
+| Plugin configs stored in `localStorage` rather than Postgres | Config visible to any injected script; no server-side validation | Per-project requirement: persist to `board.workspaces` table through the existing auth session |
+| SSE endpoint unauthenticated | Any user can subscribe to agent event stream | Validate NextAuth session in the SSE Route Handler before opening the stream; 401 on missing session |
+| Plugin config `JSON.parse`d without validation | Stale or tampered workspace JSON causes unexpected plugin behavior | Validate deserialized config against a Zod schema per plugin type before passing as props |
+| HALT endpoint callable without guardCheck | Safety-critical action bypasses constitutional gate G8 | HALT REST call goes through existing `guardCheck()` infrastructure — never a direct DB update |
+
+---
+
+## UX Pitfalls
+
+| Pitfall | How It Manifests | Prevention |
+|---------|-----------------|------------|
+| Layout "pops" on load | Grid renders in wrong positions for 100–200ms until `useContainerWidth` measures the container, then jumps to final positions | Show a skeleton/placeholder during mount; use `measureBeforeMount: true` if available, or delay grid render until width is measured |
+| Mobile: drag handle conflicts with scroll | User tries to scroll the page on mobile, but the draggable grid item intercepts the touch event | Disable drag/resize entirely at `<768px`; render single-plugin full-screen with swipe navigation as specified |
+| Command palette not indexed at launch | Board member presses Cmd+K expecting to find plugins but the index is empty until workspaces load | Build the command index from the static plugin registry, not from loaded workspace state — plugins are always available even before a workspace is loaded |
+| Workspace preset "Daily Ops" doesn't match the user's last manual layout | Switching to a preset silently overwrites the user's saved layout | Treat presets as read-only templates; applying a preset creates a new workspace, it does not overwrite the current one |
+| Existing page features missing after migration | A workflow that worked on the 16 fixed pages is absent or broken in the plugin version | Maintain an explicit feature parity matrix (one row per existing page function) with sign-off before decommissioning any legacy page |
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-Things that appear complete in a spec compliance audit but are missing critical pieces.
+These are items that appear complete in development but fail in production or under edge conditions:
 
-- [ ] **JWT enforcement activated:** Verify `withAgentScope()` is called in every agent that reads or writes sensitive schemas, not just the ones that were originally audited. Check orchestrator, strategist, reviewer, and all executor variants.
-- [ ] **RLS policies active:** Running `SELECT * FROM pg_policies` confirms policies exist — but "existing" is not "enforced." Verify `FORCE ROW LEVEL SECURITY` is set on the tables, not just the policies defined.
-- [ ] **Hash chain integrity:** The Merkle publisher runs on a schedule. Verify the scheduled job is actually running (check `autobot_finance.phase1_metrics` or `infrastructure_logs`) and has not been accidentally disabled during refactoring.
-- [ ] **`inbox.drafts` view removed:** Removing the view is step 3. Step 1 is migrating all consumers. Grep for `inbox.drafts` in the full codebase (including dashboard `page.tsx` files, api routes, and any CLI scripts) before declaring the migration complete.
-- [ ] **Guard check atomicity preserved:** After any change to `state-machine.js`, run the integration test that verifies `guardCheck()` and `transitionState()` are still in the same DB transaction. The unit test alone does not verify this.
-- [ ] **Completeness check absence documented:** The missing LLM-based completeness check is an open TODO in `agent-loop.js`. Verify this is tracked as a work item in the task graph, not silently dropped from the audit scope.
-- [ ] **Token revocation on HALT:** The in-memory JWT blocklist must be populated when a HALT command is issued. Verify the `dead-man-switch.js` or HALT handler actually calls the revocation function in `agent-jwt.js`.
-
----
-
-## Recovery Strategies
-
-When pitfalls occur despite prevention, how to recover.
-
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Pipeline halted by premature RLS activation | HIGH | 1. Immediately set `ENFORCE_RLS=false` (feature flag). 2. Restart agent processes. 3. Verify in-flight work items resume from `assigned` state. 4. Audit all `withAgentScope()` callsites before re-enabling. |
-| Hash-chain integrity broken by migration | HIGH | 1. Do not run further migrations. 2. Identify the last valid hash in `state_transitions`. 3. Rebuild hash from that point using `merkle-publisher.js` replay function (verify one exists). 4. Board review required before resuming. |
-| `inbox.drafts` view dropped while consumers still reference it | MEDIUM | 1. Recreate the view immediately from the backup SQL in `sql/001-baseline.sql`. 2. Deploy view recreation before any other changes. 3. Identify remaining consumers and migrate them before dropping again. |
-| Audit scope creep — accidental feature introduced | MEDIUM | 1. Revert the feature commit. 2. Open a separate work item for the feature. 3. Continue the audit without it. Do not attempt to "partially revert" a mixed commit. |
-| `guardCheck()` accidentally decoupled from `transitionState()` | CRITICAL | 1. Revert immediately — do not patch forward. 2. Review all `state_transitions` rows written since the decoupling for guard check compliance. 3. For rows written without guard check: flag as unverified in a new `audit_flags` entry, escalate to board. |
-| Phase 2 work accidentally deployed to Phase 1 | LOW-MEDIUM | 1. Identify if it is additive (new DB roles) or breaking (schema changes). 2. Additive: leave in place, document as early Phase 2 delivery. 3. Breaking: revert, redeploy, open Phase 2 work item. |
+- [ ] Grid renders correctly in production but breaks on Railway because SSE heartbeat is missing and connection drops after 2 minutes
+- [ ] Workspace persistence works in development but `schemaVersion` field absent — first plugin rename will corrupt all saved layouts
+- [ ] HALT plugin shows correct state locally but depends on SSE; drops to stale state under Railway 15-minute reconnect
+- [ ] Error boundaries wrap all plugins in development but async errors in approval action handlers go untrapped
+- [ ] Mobile layout appears correct at 375px emulation but draggable touch-action blocks scroll on real iOS Safari
+- [ ] SSE receives all events in development (localhost, no proxy) but events arrive in batches on corporate network
+- [ ] Layout saves correctly on drag stop but `onLayoutChange` fires for `lg` breakpoint only — `sm` layout is not persisted, mobile layout reverts to interpolated default
+- [ ] Command palette searches plugins but does not search drafts — board member expects to find draft approvals by Cmd+K
+- [ ] Legacy inbox dashboard decommissioned but domain redirect not configured — `inbox.staqs.io` returns 404 instead of redirecting to `board.staqs.io`
+- [ ] Plugin `'use client'` boundary set correctly but parent layout component also has `'use client'` for an unrelated reason — server component gains disappear silently
+- [ ] react-grid-layout imported without `ssr: false` — hydration errors are intermittent (only fail when server-rendered width differs from client), making them easy to miss in happy-path testing
 
 ---
 
 ## Pitfall-to-Phase Mapping
 
-How roadmap phases should address these pitfalls.
-
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Breaking pipeline by activating dormant RLS | JWT/RLS enforcement phase — must have feature flag and callsite audit before activation | Full pipeline smoke test: email → triage → draft → review → approval without work items sticking |
-| Confusing current vs. target architecture scope | Pre-audit scoping (Phase 0 of audit) | Scope document signed off by board, with explicit Phase 1 / Phase 2 boundary per ADR-018 |
-| Losing hash-chain integrity in migration | Schema cleanup phase (deprecated view removal) | `merkle-publisher.js` integrity check passes after every migration |
-| Audit scope creep | Every phase — enforced by commit message convention | Zero commits in audit milestone without a SPEC.md section reference |
-| Over-engineering enforcement | JWT/RLS enforcement phase scope lock | ADR-018 Phase 1 scope confirmed before coding begins |
-| Breaking guard check atomicity | Any phase touching `state-machine.js` | Integration test: guard failure blocks state transition (not just unit test) |
+| Phase Topic | Pitfall | Mitigation |
+|-------------|---------|------------|
+| Shell scaffold (Phase 1) | CP-1: Hydration crash | `dynamic({ ssr: false })` on grid shell before any other work |
+| Shell scaffold (Phase 1) | CP-3: No schemaVersion | Add `schemaVersion: 1` to workspace schema DDL in the same migration that creates the table |
+| Data provider hooks (Phase 1) | CP-2: SSE drops silently | Heartbeat + reconnect + polling fallback baked into the data provider hook contract |
+| Plugin lifecycle (Phase 1) | CP-4: Boundary gaps | `react-error-boundary` + `useErrorBoundary` in plugin host contract |
+| HALT plugin (Phase 1) | CP-5: HALT gated on SSE state | Always-visible button; direct REST POST; explicit review gate before ship |
+| Mobile optimization | Touch/scroll conflict | `isDraggable={false}` at `<768px`; validate on real iOS Safari, not emulation |
+| Plugin migration (all phases) | Feature parity | Maintain explicit parity matrix; do not decommission a legacy page until all its functions are verified in the new plugin |
+| Workspace presets | Preset overwrites layout | Presets as read-only templates; applying preset creates new workspace |
+| Decommission legacy dashboard | Domain redirect missed | Redirect config verified in Railway before legacy service is removed |
 
 ---
 
 ## Sources
 
-- `.planning/codebase/CONCERNS.md` — Tech debt, fragile areas, known bugs (HIGH confidence — direct codebase analysis)
-- `.planning/codebase/ARCHITECTURE.md` — System layers, data flow, state management (HIGH confidence)
-- `CLAUDE.md` — Design principles P1-P6, agent tier constraints, board governance (HIGH confidence)
-- `.planning/PROJECT.md` — Audit scope, constraints, out-of-scope items (HIGH confidence)
-- [The Agentic Confusion: Why I Keep My Postgres Control Plane Deterministic](https://www.enterprisedb.com/blog/agentic-confusion-why-i-keep-my-postgres-control-plane-deterministic) — Deterministic enforcement patterns for agent systems (MEDIUM confidence)
-- [WorkOS: The architecture of governable AI agents](https://workos.com/blog/ai-agents-architecture) — JWT intent binding, authorization at tool level (MEDIUM confidence)
-- [Refactoring Databases Is a Different Animal](https://newsletter.systemdesignclassroom.com/p/refactoring-databases-is-a-different-animal) — Expand/Contract pattern, schema-level refactoring risks (MEDIUM confidence)
-- [7 Pitfalls to Avoid in Application Refactoring Projects](https://vfunction.com/blog/7-pitfalls-to-avoid-in-application-refactoring-projects/) — Scope creep, incremental approach, blast radius (MEDIUM confidence)
-- [Immutable Audit Trails: A Complete Guide](https://www.hubifi.com/blog/immutable-audit-log-basics) — Hash-chain pitfalls, enforcement at data store level (MEDIUM confidence)
-- [AuditableLLM: Hash-Chain-Backed Compliance Framework](https://www.mdpi.com/2079-9292/15/1/56) — Hash chain dependency risks in LLM audit systems (MEDIUM confidence)
-
----
-
-*Pitfalls research for: Optimus spec compliance audit — governed agent system*
-*Researched: 2026-04-01*
+- Railway SSE/WebSocket documentation: [Choose Between SSE and WebSockets — Railway Guides](https://docs.railway.com/guides/sse-vs-websockets)
+- Railway SSE 1MB transfer limit (community report): [Are there limits on total transfer size over SSE? — Railway Help Station](https://station.railway.com/questions/are-there-limits-on-total-transfer-size-3c991de1)
+- SSE proxy buffering post-mortem: [Server Sent Events are still not production ready after a decade — DEV Community](https://dev.to/miketalbot/server-sent-events-are-still-not-production-ready-after-a-decade-a-lesson-for-me-a-warning-for-you-2gie)
+- Next.js SSE Route Handler buffering issue: [Server-Sent Events don't work in Next API routes — vercel/next.js Discussion #48427](https://github.com/vercel/next.js/discussions/48427)
+- Nginx proxy buffering for SSE: [Surviving SSE Behind Nginx Proxy Manager — Medium](https://medium.com/@dsherwin/surviving-sse-behind-nginx-proxy-manager-npm-a-real-world-deep-dive-69c5a6e8b8e5)
+- react-grid-layout hydration / SSR: [How to Fix Hydration Mismatch Errors in Next.js — OneUptime](https://oneuptime.com/blog/post/2026-01-24-fix-hydration-mismatch-errors-nextjs/view)
+- react-grid-layout performance at scale: [Performance with large number of items — GitHub Issue #1069](https://github.com/STRML/react-grid-layout/issues/1069)
+- react-grid-layout v2 `useContainerWidth` and `WidthProvider` deprecation: [react-grid-layout GitHub](https://github.com/react-grid-layout/react-grid-layout)
+- react-grid-layout mobile touch-action conflict: [touch-action: none is added to items — GitHub Issue #637](https://github.com/react-grid-layout/react-grid-layout/issues/637)
+- react-grid-layout localStorage layout reset bug (schemaVersion lesson): [Layouts stored in local storage are being reset every reload — GitHub Issue #902](https://github.com/STRML/react-grid-layout/issues/902)
+- Next.js App Router `'use client'` overuse: [Next.js App Router Patterns That Actually Work — DevGlory](https://devglory.com/blog/next-js-15-app-router-patterns-that-actually-work)
+- Error boundary async gap: [React Error Boundaries — React legacy docs](https://legacy.reactjs.org/docs/error-boundaries.html)
+- react-error-boundary `useErrorBoundary` hook: [Error Handling in React with react-error-boundary — Certificates.dev](https://certificates.dev/blog/error-handling-in-react-with-react-error-boundary)
+- cmdk SSR `open` prop fix: [shadcnstudio/shadcn-cmdk-search — GitHub](https://github.com/shadcnstudio/shadcn-cmdk-search)
+- Dashboard schema versioning complexity: [Dashboard Schema Versioning — Perses Discussion #1186](https://github.com/perses/perses/discussions/1186)
+- SSE HTTP/2 and 6-connection browser limit: [Server-Sent Events don't work in Next API routes — vercel/next.js Discussion #48427](https://github.com/vercel/next.js/discussions/48427)

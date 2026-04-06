@@ -1,22 +1,19 @@
 # Feature Research
 
-**Domain:** Spec compliance audit for a governed agent organization (Optimus / autobot-inbox)
-**Researched:** 2026-04-01
-**Confidence:** HIGH — codebase examined directly; existing audit infrastructure observed in detail; findings cross-checked against SPEC.md requirements documented in CLAUDE.md, CONCERNS.md, and ARCHITECTURE.md
+**Domain:** Plugin-based operational dashboard / command console (board command surface for governed AI agent organization)
+**Researched:** 2026-04-05
+**Confidence:** HIGH — grounded in PRD v1.0.0, SPEC.md, and verified against Grafana/Datadog patterns and AI agent observability literature
 
 ---
 
-## Context: What Makes This Audit Distinct
+## Context: This Is Not a Generic Admin Dashboard
 
-This is not a generic software quality audit. It is a **spec-compliance audit** for a system where:
+This is a **board command console** for two named principals (Dustin and Eric) governing a live AI agent organization. That distinction changes feature priorities significantly:
 
-- The spec (SPEC.md v0.7.0) is the **authority** — code is wrong when spec and code diverge
-- Design principles P1-P6 are **non-negotiable** and cited by number in architectural decisions
-- Constitutional gates G1-G7 are **infrastructure-enforced** (P2), not prompt-guided
-- The system has a **partially-implemented** target architecture (§5): JWT identity and RLS exist as code but enforcement is incomplete (ADR-018, CONCERNS.md)
-- The audit must produce **actionable compliance gap records**, not just a report
-
-The feature categories below are organized around this audit's core question: does every spec claim map to a verifiable implementation state?
+- **Approval Queue and HALT Control are life-safety features**, not convenience features. They must work when everything else is broken.
+- **There are no anonymous users.** GitHub OAuth gates access to exactly two accounts. RBAC, user management, and onboarding flows are anti-features.
+- **The brain (agents, API, Postgres) is already built.** Every feature here is a rendering and interaction decision, not a new backend capability.
+- **Board members are power users by definition.** Keyboard-first navigation, information density, and precision controls matter more than discoverability.
 
 ---
 
@@ -24,219 +21,200 @@ The feature categories below are organized around this audit's core question: do
 
 ### Table Stakes (Users Expect These)
 
-Audit is incomplete without these. Each maps to a specific SPEC.md section or design principle.
+Features whose absence makes the dashboard non-functional or unacceptable to the board.
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Design principle P1-P6 sweep | Every architectural decision must cite a principle; the audit must verify enforcement boundaries are in infrastructure, not prompts | MEDIUM | Check guard-check.js, state-machine.js, DB constraints. P2 and P4 have the most code implications. |
-| Agent tier enforcement check (§2) | Spec defines 5 tiers (Strategist/Opus, Architect/Sonnet, Orchestrator/Sonnet, Reviewer/Sonnet, Executor/Haiku). Wrong model assignments = spec violation | LOW | Cross-reference agents.json model fields against §2 tier table. All 8 agents must map to a valid spec tier. |
-| Agent capability constraint verification (§2) | Each tier has explicit capability limits (e.g., Strategist cannot deploy; Orchestrator has explicit can_assign_to list). These must be enforced in agents.json and code, not just documented | MEDIUM | Verify: Strategist agents have no deploy tools; Orchestrator has explicit can_assign_to (not glob); Executors cannot initiate tasks |
-| Task graph state machine audit (§3) | Work items must transition only through the legal state sequence: created → assigned → in_progress → review → completed. Terminal states: completed, cancelled. Illegal transitions should be blocked by DB constraints | MEDIUM | Inspect state-machine.js and DB CHECK constraints in 001-baseline.sql. Verify that each transition is gated by transitionState() + guardCheck() atomically. |
-| DAG edge and retry/escalation verification (§3) | Failed tasks must retry up to 3 times, then escalate. The DAG edge structure (depends_on) must be enforced. Orphaned or cyclic edges indicate spec violations | MEDIUM | Query agent_graph.edges for orphans. Check reaper.js retry counter logic against spec limit. |
-| Guardrail G1-G7 completeness check (§5) | All 7 constitutional gates must exist in gates.json AND have active enforcement code paths in guard-check.js. Missing gates = silent governance gap | LOW | spec-drift-detector.js already does a surface check; the audit must verify each gate has both config AND a code path that executes atomically with transition_state(). |
-| guardCheck() + transition_state() atomicity audit (§5) | The spec requires guardrail checks to execute as a single atomic Postgres transaction. If this coupling is broken anywhere, agents can bypass gates | HIGH | Verify every call site in agent-loop.js that performs a state transition also passes a transaction client to guardCheck(). Manual code trace required. |
-| Hash chain integrity verification (P3, ADR-006) | append-only state_transitions table uses SHA-256 hash chains. Broken links = tamper evidence. Must verify: triggers prevent mutation, hash computation matches between JS and SQL, verify_ledger_chain() passes for all recent work items | MEDIUM | tier1-deterministic.js already runs hourly; audit must run full verify_all_ledger_chains() and report broken count. Also verify the trigger definitions exist in 001-baseline.sql. |
-| Cross-schema isolation check (§12, CLAUDE.md) | "No cross-schema foreign keys" is an explicit constraint (SPEC §12, code convention). Five schemas: agent_graph, inbox, voice, signal, content. Any FK crossing schema boundaries is a violation | LOW | Query information_schema.referential_constraints and information_schema.key_column_usage to find cross-schema FKs. Should be zero. |
-| JWT implementation completeness (§5, ADR-018) | ADR-018 (accepted 2026-03-07) reversed JWT deferral. JWT issuer + signing + verification are complete; RLS enforcement is partial (CONCERNS.md). Audit must map: what is done vs. what spec requires | HIGH | Check: initializeJwtKeys(), issueToken(), verifyToken() exist and work; withAgentScope() validates JWT before set_config; RLS policies are active (not just defined); state_transitions.agent_id is JWT-bound |
-| pg_notify event system presence (P4) | Spec requires Postgres-native event bus (pg_notify), not an external queue. Audit must confirm no Redis or external queue is in the critical coordination path | LOW | event-bus.js should use pg_notify. Redis is present (ioredis dependency) — verify it is used only for caching (board workstation), not agent coordination. |
-| Audit log append-only trigger verification (P3) | state_transitions and edit_deltas must have active triggers preventing UPDATE and DELETE. ADR-006 documents them. The audit must confirm they exist and fire as expected | LOW | Query information_schema.triggers for trg_state_transitions_no_update and trg_state_transitions_no_delete. Run a test UPDATE and verify it raises an exception. |
-| Spec drift surface check | spec-drift-detector.js runs daily and checks §3 task graph tables, §5 guardrail completeness, §9 kill switch, §14 phase metrics. Audit must verify this detector itself is active and has fired recently | LOW | Query agent_graph.task_events for recent spec-drift runs. Verify the detector covers the four sections it claims to cover. |
-| Phase 1 exit criteria gap map (§14) | SPEC §14 defines Phase 1 exit criteria. The audit must produce a complete map: which exit criteria are met, which are partially met, which are missing | MEDIUM | Cross-reference PROJECT.md "Active" requirements against the spec §14 exit criteria list. Output must be a clear pass/fail table. |
+| Approval Queue — view, approve, reject, edit drafts | Core daily operation. Without this, agents cannot communicate externally | High | P0. Mobile-critical. Must work at 375px. Existing page is the reference. |
+| HALT Control — trigger and resume | SPEC §9 kill switch. Legal and constitutional requirement, not a convenience | Low | P0. Tiny UI (button + status indicator). Must be reachable from any workspace within 2 keystrokes. |
+| Real-time state updates via SSE | Agent state changes must be visible without manual refresh. Polling >30s creates dangerous lag in approval scenarios | Medium | SSE backed by Redis pub/sub. REST polling fallback required — SSE is unreliable on Railway proxies. |
+| Agent status — live health of all 18 agents | Board cannot govern what it cannot observe. Dead or looping agents are operational incidents | Medium | Read-only. Tier, sub-tier, model, last active, current task. |
+| Pipeline view — task funnel with current state | SPEC §8 explicit requirement: task funnel visualization. Maps directly to agent_graph schema states | Medium | created → assigned → in\_progress → review → completed. |
+| Cost tracking — per-tier, per-model spend | Budget control is a board duty. Constitutional gate G1 (budget pre-authorization) requires cost visibility | Low | Read-only charts. recharts is already in spec. |
+| Audit log — immutable event history | SPEC P3 (transparency by structure). Board must be able to audit any action taken by any agent | Low | Read-only table with filters. Append-only, hash-chained in backend. |
+| Governance / constitutional gate status | Board's primary oversight surface. Gates G1-G8 status, gate config, recent gate trips | Medium | Dual-use: read (compliance view) + write (gate config). |
+| Today brief — daily digest | SPEC §8 "event digests." Board needs a zero-config morning context view without navigating individually | Medium | Aggregates from multiple providers (drafts, signals, agents). Default landing view. |
+| Signal feed | Extracted intelligence from agent activity. Core output of the signal pipeline | Medium | Read-only. Existing page reference. |
+| Workspace persistence — save/restore layouts | A command console that forgets your layout between sessions is not usable by power users | Medium | One Postgres table (board.workspaces). Per-member, shared presets. |
+| Command palette (Cmd+K) | SPEC D5 (keyboard-first). Power users cannot operate efficiently without this. Grafana and Linear both treat this as table stakes | Low | cmdk already selected. Scope: workspaces, plugins, drafts, HALT. |
+| Plugin crash isolation | A failing DAG visualization must not prevent draft approval. Error boundaries are a correctness requirement | Low | React error boundary per plugin pane. Error card + retry button. |
+| Mobile approval queue | Board members must be able to approve drafts on mobile. Agents do not pause for desktop availability | High | Single-plugin full-screen at <768px. Swipe navigation between active plugins. |
+| Shell load time < 2s desktop / < 3s mobile | A slow console creates hesitation before safety-critical actions (HALT). Standard web performance expectation | Medium | Lighthouse-verifiable. Directly in PRD exit criteria. |
 
-### Differentiators (Deeper Analysis That Adds Value)
+---
 
-These go beyond pass/fail to produce governance-grade evidence.
+### Differentiators (Competitive Advantage for This Specific Console)
+
+Features that make this board console significantly better than a generic admin dashboard for this domain.
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Autonomy level enforcement audit (§4, CLAUDE.md) | AUTONOMY_LEVEL env var (0/1/2) should control which agent actions require approval. The graduated autonomy model (L0/L1/L2) has specific exit conditions. Audit should verify: current level is correct for the trust data; config reflects the level; autonomy-controller.js enforces it | MEDIUM | autonomy-controller.js and autonomy-evaluator.js implement this. Cross-check current metrics (approval rate, edit rate, days running) against L0 exit conditions: 50+ drafts, <10% edit rate, 14 days. |
-| Prompt-to-code fidelity check for agent tier constraints | agent-loop.js is supposed to enforce tier boundaries in code (P2). But agent handlers also receive system prompts that describe constraints. Audit should flag any case where a constraint exists only in a prompt and not in the infrastructure layer | HIGH | This requires tracing each agent's claimed constraints through to code-level enforcement. Example: "Executor cannot initiate tasks" — verify there is no code path in any executor allowing work_item creation without going through orchestrator. |
-| Token revocation gap analysis (ADR-018, CONCERNS.md) | JWT tokens are 15-minute TTL with no revocation list. A killed/compromised agent retains a valid token until expiry. CONCERNS.md marks this as a known gap. Audit should quantify the exposure window and recommend minimum: in-memory blocklist cleared on HALT | LOW | agent-jwt.js inspection. Verify: is there any revocation mechanism? Does HALT signal invalidate outstanding tokens? |
-| Completeness check absence documentation (CONCERNS.md) | The LLM-based output completeness validator was removed (governance theater). Replacement not implemented. Audit should document which executors produce unvalidated outputs and what the acceptance criteria field looks like in practice | MEDIUM | agent-loop.js line ~465 has the removed check. Inspect work_items.acceptance_criteria values in DB for recent tasks. |
-| Permission grants over-breadth scan | CONCERNS.md notes risk of overly broad permission grants (wildcards on resource_id). Audit should query agent_graph.permission_grants for any resource_id = '*' grants and flag executors with write permissions they shouldn't need | LOW | Simple SQL query against permission_grants table. |
-| Linear webhook HMAC gap (CONCERNS.md) | Webhook acceptance falls back to header-only check (easily spoofed) when HMAC fails. Audit should classify this as a P1 (deny by default) violation since the system is accepting unverified payloads | LOW | api.js lines ~957-968. Document the fallback logic and classify severity under P1. |
-| Behavioral drift detection review | tier2-ai-auditor.js performs behavioral drift detection using Sonnet. Audit should verify: the detector runs daily, findings are persisted to audit_findings, and any critical finding would trigger a HALT in Phase 3 mode | LOW | Review tier2-ai-auditor.js trigger logic and audit_findings table. Confirm Phase 3 HALT trigger is correctly gated on isPhase3Active(). |
-| Adversarial sanitization test coverage (§5) | adversarial-test-suite.js tests the content sanitizer against 200+ attack payloads (prompt injection, role-play, data exfiltration). Audit should verify: test suite runs, pass rate is tracked, any new failure since last run is surfaced | MEDIUM | Run the test suite and compare results against last audit run. Focus on false-positive rate (benign inputs being redacted). |
-| Config drift check (exploration domain) | config-drift.js in the exploration domains detects when deployed config diverges from the committed config. Audit should verify this domain runs and produces actionable findings | LOW | Confirm config-drift.js is wired into the exploration monitor and fires on a schedule. |
-| Dead-man-switch liveness check (§9) | spec-drift-detector.js checks that a dead_man_switch event fired in the last 48h. Audit should verify: the DMS fires reliably, what happens if it misses a cycle, and whether the board would be notified | LOW | dead-man-switch.js. Query agent_graph.task_events for DMS events over the last 7 days. |
-| Audit tier scheduling integrity | Three audit tiers: Tier 1 every agent cycle, Tier 2 daily, Tier 3 every 48h with Opus. Audit should verify all three are scheduled and ran within their expected windows | LOW | Query agent_graph.audit_findings for last run timestamps per tier. |
-| Hash chain JS/SQL parity test | ADR-006 notes a coupling risk: computeHashChain() in state-machine.js and the SQL fallback in transition_state() must produce identical hashes for the same inputs. A format string divergence would cause silent verification failures | MEDIUM | Write a test that inserts a transition via JS code path and verifies the hash using the SQL verify_ledger_chain() function. Compare results. |
-| Schema count documentation accuracy | spec-alignment.js (exploration domain) checks whether CLAUDE.md's claimed schema count matches information_schema. Audit should verify this check runs and report the actual vs. claimed count | LOW | Already partially implemented in spec-alignment.js. Run and capture output. |
+| DAG Visualization — live task dependency graph | SPEC §8 explicit requirement. Makes agent coordination legible: what depends on what, what is blocked, where is the bottleneck | Medium | Read-only. React Flow with dagre layout is the right library (built-in dagre support, MIT, 19K+ stars). Uses existing pipeline data provider. No new API needed. |
+| Workspace presets — role-specific views | "Daily Ops" vs "Governance" vs "Cost Review" reduces context switching time by 60–80% for known workflows. Grafana Scenes proved this pattern at scale | Low | 5 presets seeded as non-editable system workspaces. Board can fork to create custom variants. |
+| CLI Workstation plugin (xterm.js) | Board members can issue CLI commands without switching to a terminal. Critical for development / debugging phases. Turns the dashboard into a full control surface | High | Existing code, needs plugin wrapping. xterm.js is already in the stack. |
+| Knowledge base management | RAG pipeline management (add/remove docs) directly in the console. Migrated from legacy inbox dashboard. Direct board control over what agents know | Medium | Write-capable provider (knowledge.add, knowledge.remove). |
+| Per-plugin configurable time windows | "Show cost for last 7 days" vs "last 30 days" without leaving the plugin. Grafana established this as user expectation for analytics panels | Low | configSchema in PluginManifest. Per-plugin config persisted in board.workspaces.plugin\_configs JSONB. |
+| HALT reachability from command palette | Triggering HALT via keyboard (Cmd+K → "halt") is faster than any mouse-driven UI in a crisis. No other admin dashboard does this for AI safety controls | Low | One command entry in cmdk registry. Calls existing POST /api/halt endpoint. |
+| Drag/resize/reorder grid panes | Board members have different workflows — Dustin monitors approvals; Eric reviews pipeline. A fixed layout forces a single mental model onto two different operators | Medium | react-grid-layout. Layout serialized to JSONB, round-trips without precision loss. |
 
-### Anti-Features (Things to Deliberately NOT Do in This Audit)
+---
 
-| Anti-Feature | Why Requested | Why Problematic | Alternative |
-|--------------|---------------|-----------------|-------------|
-| Rewrite working code for style compliance | SPEC.md has strong opinions on code patterns; reviewers may want to standardize everything | Violates project constraint: "Only fix spec violations — no rewrites for style preferences" | Flag style divergences as informational findings. Do not include in compliance gap count. |
-| Audit Phase 2+ target architecture as failures | The spec has a "currently implemented" vs. "target architecture" distinction (§5). Per-agent DB roles, external JWT verification, and token revocation are explicitly Phase 2 | Treating Phase 2 items as Phase 1 failures inflates gap count and misleads board | Clearly label each finding with its phase. Phase 2 items get a "deferred, by design" status. |
-| External integration testing | Testing that Gmail API, Linear webhooks, Slack, etc. function correctly is operational testing, not spec compliance | Misaligned with audit scope; flaky due to external dependencies; a different discipline entirely | Mark external integrations as "out of scope." Note known bugs (Gmail refresh token expiry) as operational concerns. |
-| Generate a compliance score or percentage | Reduces nuanced gap severity to a single number; can be gamed; invites false confidence | A "92% compliant" system with one critical JWT enforcement gap is dangerous | Produce a severity-tiered gap table. Let the board judge risk. Do not aggregate into a score. |
-| Automated fixes without board review for security boundaries | The audit framework could in theory auto-fix minor gaps (e.g., re-enable a trigger). For anything touching P1/P2 enforcement boundaries, this is dangerous | CLAUDE.md and ADR-002 require board review for security boundary decisions | Audit produces findings and recommendations. Fixes are committed separately, each atomically (per PROJECT.md constraint). |
-| Deep LLM-based semantic analysis of every agent prompt | tier2-ai-auditor.js already does prompt alignment analysis daily. Running this again as part of the audit would be expensive and redundant | Costs $50-80/month per full run; duplicates existing infrastructure | Reference the last tier2 run results rather than re-running. Flag if tier2 results are stale (>48h). |
-| Testing the voice profile embedding quality | Voice profiles (G3 tone matching) are a product quality concern, not a spec compliance concern. The audit checks whether G3 enforcement exists and fires; it does not evaluate whether the threshold (0.80) is the right value | Feature creep; voice profile quality is a Phase 1.5+ concern per SPEC | Note the VOICE_TONE_THRESHOLD hardcoding as a minor finding (not configurable). Do not evaluate embedding quality. |
+### Anti-Features (Commonly Requested, Often Problematic)
+
+Features to deliberately NOT build in this milestone.
+
+| Anti-Feature | Why Avoid | What to Do Instead |
+|--------------|-----------|-------------------|
+| Runtime plugin loading (dynamic imports from URL) | Security boundary required. Any remotely-loaded code bypasses SPEC P1 (deny by default) and P2 (infrastructure enforces). Adds significant complexity with zero benefit when all plugins are first-party | All plugins compile-time. Add new plugins via code review, not URL registration. |
+| Plugin sandboxing (iframes, web workers) | Same-origin first-party plugins don't need sandboxing. iframes break react-grid-layout resize behavior and increase bundle complexity for zero security gain in this threat model | React error boundaries provide crash isolation without the overhead. |
+| User management / RBAC / role assignment | There are exactly two board members, fixed in config. Building an access management UI wastes sprint budget and adds attack surface | GitHub OAuth + BOARD\_MEMBERS env var. Period. |
+| Notification system / alerts / email | Agents already communicate through Gmail/Slack/Telegram channels. Adding a notification layer to the dashboard creates a third channel competing with the existing two | Board uses existing channels. Dashboard shows real-time state. |
+| AI-assisted dashboard features (anomaly detection, predictive analytics) | Training data on your own agent activity is insufficient at this scale. Premature optimization. Creates trust issues with outputs that can't be verified against groundtruth | Surface raw data clearly. Let the board draw conclusions. |
+| Onboarding flows / guided tours / help modals | Two users who built the system. Onboarding is wasted pixels and insulting to power users | Strong keyboard discoverability via command palette serves the "how do I do X" need. |
+| Theming / color customization | Internal tool. Brand consistency is not a concern. Every hour on theming is an hour not on HALT control | Dark mode as the single theme. If the board asks for light mode later, one CSS variable swap. |
+| board-query chat plugin (Cmd+K AI assistant) | Architecturally sound idea (OQ-4), but adds a new data path and LLM call latency to an otherwise pure API-driven console. Scope risk in a 10-14 day build | Defer to Phase 2. board-query utility agent already works standalone. |
+| Pagination-heavy audit logs with complex filtering | Power users export raw data for analysis. Surfacing 10 pages of filter controls in a plugin is the wrong interaction model | Show last 50 events with a single date-range filter. Link to raw data export. |
+| Cross-member workspace sync | If Dustin changes his layout, Eric's layout changes too. Violates the principle of per-operator configuration. | Per-member workspaces. Shared presets are read-only templates. |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Phase 1 Exit Criteria Gap Map]
-    └──requires──> [Design Principle P1-P6 Sweep]
-    └──requires──> [Agent Tier Enforcement Check]
-    └──requires──> [Task Graph State Machine Audit]
-    └──requires──> [Guardrail G1-G7 Completeness Check]
-    └──requires──> [JWT Implementation Completeness]
-    └──requires──> [Hash Chain Integrity Verification]
-    └──requires──> [Cross-Schema Isolation Check]
+HALT Control
+  └── system data provider (useSystemStatus)
+       └── POST /api/halt (existing endpoint)
 
-[guardCheck() + transition_state() Atomicity Audit]
-    └──requires──> [Task Graph State Machine Audit]
-    └──enhances──> [Guardrail G1-G7 Completeness Check]
+Approval Queue
+  └── drafts data provider (useDrafts)
+       ├── GET /api/drafts (REST initial load)
+       ├── SSE /api/events?channel=drafts (real-time)
+       └── POST /api/drafts/:id/approve|reject (writes → guardCheck)
 
-[JWT Implementation Completeness]
-    └──reveals──> [Token Revocation Gap Analysis]
-    └──reveals──> [RLS Enforcement Status]
+DAG Visualization
+  └── pipeline data provider (usePipeline)
+       └── GET /api/pipeline (REST — read-only, no SSE needed)
+       └── React Flow + dagre layout (new npm dep, compile-time)
 
-[Hash Chain Integrity Verification]
-    └──requires──> [Audit Log Append-Only Trigger Verification]
-    └──enhances──> [Hash Chain JS/SQL Parity Test]
+All plugins
+  └── Plugin shell (react-grid-layout)
+       └── Workspace persistence (board.workspaces table)
+            └── Command palette (cmdk) → workspace switching
 
-[Spec Drift Surface Check]
-    └──validates──> [Audit Tier Scheduling Integrity]
-    └──validates──> [Dead-Man-Switch Liveness Check]
+Agent Status
+  └── agents data provider (useAgents)
+       └── SSE /api/events?channel=agents (real-time critical)
 
-[Prompt-to-Code Fidelity Check]
-    └──requires──> [Agent Tier Enforcement Check]
-    └──requires──> [Agent Capability Constraint Verification]
+Cost Tracker
+  └── cost data provider (useCost)
+       └── GET /api/cost (REST only — historical, no live updates needed)
 
-[Completeness Check Absence Documentation]
-    └──conflicts with──> [Adversarial Sanitization Test Coverage]
-    (one is about output quality gates; the other is about input sanitization — distinct concerns)
+Governance plugin
+  └── governance data provider (useGovernance)
+       └── audit data provider (useAuditLog)
+       └── POST /api/governance (gate config writes → guardCheck)
 
-[Permission Grants Over-Breadth Scan]
-    └──enhances──> [Agent Capability Constraint Verification]
+Today Brief
+  └── today data provider (useTodayBrief)
+       └── drafts data provider (pending count)
+       └── signals data provider (signal count)
+
+Knowledge Base plugin
+  └── knowledge data provider (useKnowledge)
+       └── POST /api/knowledge/add|remove (writes)
+
+CLI Workstation
+  └── No data provider dependency
+       └── xterm.js (existing dependency)
+
+Mobile shell behavior
+  └── Plugin shell (viewport detection)
+       └── Swipe navigation (touch event handlers on shell, not per-plugin)
+
+Workspace presets
+  └── Workspace persistence (must exist first)
+       └── All 12 plugins (must be registered first)
 ```
 
-### Dependency Notes
-
-- **Phase 1 Exit Criteria Gap Map requires all table stakes features:** The exit criteria map is the synthesized output — it cannot be written until each individual check has run.
-- **guardCheck() atomicity requires task graph audit:** You cannot verify gate enforcement without first confirming the state machine itself follows the spec.
-- **JWT completeness reveals downstream gaps:** Once the JWT audit reveals what is and isn't enforced, the token revocation analysis and RLS status naturally follow.
-- **Hash chain integrity requires trigger verification:** If the triggers don't exist, the hash chain check will fail for a wrong reason — trigger absence must be checked first.
-- **Prompt-to-code fidelity is the highest complexity feature:** It requires tracing each agent's system prompt constraints through to code-level enforcement. Do last, when the tier and capability checks are already complete.
+**Critical path:** Shell → Data Providers → Approval Queue + HALT → All other plugins → Presets → Mobile → Decommission
 
 ---
 
 ## MVP Definition
 
-### Audit Complete With (v1 — Phase 1 Exit Criteria)
+### Launch With (v1 — this milestone)
 
-Minimum verifiable compliance evidence for Phase 1 exit board review.
+Everything in the 12-plugin registry plus the shell infrastructure. No feature additions beyond what the PRD specifies:
 
-- [x] Design principle P1-P6 sweep — every principle must have at least one verifiable enforcement point
-- [x] Agent tier and model assignment verification — all 8 agents mapped to correct spec tier and model
-- [x] Agent capability constraint verification — can_assign_to lists, tool allow-lists confirmed
-- [x] Task graph state machine legal transition check — illegal transitions blocked by DB constraints
-- [x] Guardrail G1-G7 completeness — all gates defined in config AND have code enforcement paths
-- [x] guardCheck() + transition_state() atomicity — all call sites verified
-- [x] Hash chain integrity — full verify_all_ledger_chains() run, trigger existence confirmed
-- [x] Cross-schema isolation — zero cross-schema FKs confirmed
-- [x] JWT implementation completeness — implementation state mapped against ADR-018 requirements
-- [x] pg_notify vs Redis routing — event coordination confirmed not on Redis
-- [x] Phase 1 exit criteria gap map — full pass/fail table against SPEC §14
+1. Plugin shell (react-grid-layout, error boundaries, lifecycle)
+2. Command palette (cmdk, Cmd+K, HALT reachable)
+3. Data provider layer (10 typed hooks, REST + SSE)
+4. Approval Queue plugin (P0 — build first)
+5. HALT Control plugin (P0 — build second)
+6. Today Brief, Agent Status, Pipeline, Signals, Cost Tracker, Governance, Audit Log, Workstation, DAG View, Knowledge Base (P1-P3, in priority order)
+7. 5 workspace presets (seeded)
+8. Mobile optimization (single-plugin full-screen, swipe nav)
+9. Legacy inbox dashboard decommissioned
 
-### Add After v1 (v1.x — Security Hardening)
+### Add After Validation (v1.x)
 
-Features to address once core compliance map exists.
+Features that are architecturally clean to add as plugins after the shell proves stable:
 
-- [ ] Token revocation gap analysis — quantify exposure window, recommend in-memory blocklist
-- [ ] Permission grants over-breadth scan — flag resource_id wildcards
-- [ ] Linear webhook HMAC gap classification — classify under P1 with remediation path
-- [ ] Hash chain JS/SQL parity test — write and run the cross-implementation verification test
-- [ ] Completeness check absence documentation — document which executors have unvalidated outputs
+- **board-query chat plugin** (OQ-4) — DeepSeek utility agent with embedded chat. Drops in as `optimus.board-query` once shell is proven.
+- **Per-plugin keyboard shortcuts** — e.g., `A` to approve in Approval Queue when focused. Requires focus management in shell.
+- **Workspace export/import as JSON** — for backup or sharing presets between members.
+- **Agent performance trends** — time-series charts on agent latency and error rates. Uses existing cost/agents data.
 
-### Future Consideration (v2+ — Deeper Behavioral Audit)
+### Future Consideration (v2+)
 
-Defer until Phase 2 work begins.
+Features that require new infrastructure or significant scope expansion:
 
-- [ ] Prompt-to-code fidelity deep trace — deferred; depends on Phase 2 per-agent role work
-- [ ] Behavioral drift detection review — already handled by tier2-ai-auditor.js running daily
-- [ ] Autonomy level enforcement audit — relevant once the system considers L0 exit
-- [ ] Adversarial sanitization test coverage — valuable but not a Phase 1 blocker
-- [ ] Audit tier scheduling integrity — operational health monitoring, not compliance
+- **Fleet management plugins** — Phase 3 in SPEC. Requires new API layer for multi-agent deployment.
+- **OpenClaw integration plugins** — Named in PRD as future plugin drop-in candidate.
+- **Mobile app** — Native shell for iOS/Android. Current spec calls for mobile-optimized web only.
+- **Vercel deployment** — BD-3 pending board decision. Separate deployment target, not a feature.
 
 ---
 
 ## Feature Prioritization Matrix
 
-| Feature | Compliance Value | Implementation Cost | Priority |
-|---------|-----------------|---------------------|----------|
-| Phase 1 exit criteria gap map | HIGH | LOW (synthesis of other checks) | P1 |
-| Design principle P1-P6 sweep | HIGH | MEDIUM | P1 |
-| Agent tier enforcement check | HIGH | LOW | P1 |
-| Agent capability constraint verification | HIGH | MEDIUM | P1 |
-| Task graph state machine audit | HIGH | MEDIUM | P1 |
-| Guardrail G1-G7 completeness | HIGH | LOW | P1 |
-| guardCheck() + transition_state() atomicity | HIGH | HIGH | P1 |
-| Hash chain integrity verification | HIGH | LOW | P1 |
-| Cross-schema isolation check | HIGH | LOW | P1 |
-| JWT implementation completeness | HIGH | HIGH | P1 |
-| pg_notify vs Redis event routing | MEDIUM | LOW | P1 |
-| Audit log trigger verification | MEDIUM | LOW | P1 |
-| Spec drift surface check | MEDIUM | LOW | P1 |
-| Token revocation gap analysis | MEDIUM | LOW | P2 |
-| Linear webhook HMAC gap classification | MEDIUM | LOW | P2 |
-| Permission grants over-breadth scan | MEDIUM | LOW | P2 |
-| Hash chain JS/SQL parity test | MEDIUM | MEDIUM | P2 |
-| Completeness check absence documentation | MEDIUM | LOW | P2 |
-| Autonomy level enforcement audit | LOW | MEDIUM | P3 |
-| Prompt-to-code fidelity check | LOW | HIGH | P3 |
-| Behavioral drift detection review | LOW | LOW | P3 |
-| Adversarial sanitization test coverage | LOW | MEDIUM | P3 |
-
-**Priority key:**
-- P1: Required for Phase 1 exit board review
-- P2: Required before Railway production deployment
-- P3: Phase 1.5+ / ongoing governance health monitoring
-
----
-
-## What Already Exists (Do Not Re-Implement)
-
-The codebase already has substantial audit infrastructure. The compliance audit should **use and extend** these, not replace them:
-
-| Existing Component | What It Does | Audit Should |
-|--------------------|--------------|--------------|
-| `tier1-deterministic.js` | Hourly: hash chain, budget, halt signals, stuck tasks, config hashes | Run on-demand and capture full output |
-| `tier2-ai-auditor.js` | Daily: behavioral drift, guardrail health, cost anomalies, prompt alignment (Sonnet) | Read last run findings; do not re-run |
-| `tier3-cross-model.js` | 48h: cross-model consistency (requires Opus) | Read last run; check if Phase 3 is active |
-| `spec-drift-detector.js` | Daily: §3 tables, §5 gates, §9 kill switch, §14 metrics | Run and capture; verify all 4 checks fire |
-| `spec-alignment.js` (exploration) | On-demand: agent tier config vs SPEC.md, schema count | Run and capture findings |
-| `capability-gates.js` | Measures G1-G5 gate thresholds for Phase 3 activation | Query gate_snapshots for current status |
-| `adversarial-test-suite.js` | 200+ sanitizer attack payloads | Run and compare against last known baseline |
+| Feature | User Value | Build Complexity | Risk If Missing | Priority |
+|---------|-----------|-----------------|-----------------|----------|
+| Plugin shell + grid | Critical | Medium | Dashboard doesn't exist | P0 |
+| HALT Control | Critical | Low | Constitutional requirement unmet | P0 |
+| Approval Queue | Critical | High | Core daily operation blocked | P0 |
+| Data provider layer | Critical | Medium | All plugins broken | P0 |
+| Command palette | High | Low | Navigation unusable without keyboard | P1 |
+| Workspace persistence | High | Medium | Layout lost on refresh | P1 |
+| Agent Status | High | Medium | No agent observability | P1 |
+| Today Brief | High | Medium | No morning context view | P1 |
+| SSE real-time updates | High | Medium | Stale data, dangerous for approvals | P1 |
+| Pipeline view | Medium | Medium | SPEC §8 requirement | P2 |
+| Signals feed | Medium | Medium | Existing page parity | P2 |
+| Governance plugin | Medium | Medium | Gate oversight reduced | P2 |
+| Cost Tracker | Medium | Low | Weekly cost review impaired | P2 |
+| Audit Log | Medium | Low | SPEC P3 (transparency) | P2 |
+| Mobile optimization | Medium | High | Board approval on mobile blocked | P2 |
+| DAG Visualization | Medium | Medium | SPEC §8 explicit requirement | P3 |
+| CLI Workstation | Medium | High | Debugging requires terminal switch | P3 |
+| Knowledge Base | Low | Medium | Legacy migration completeness | P3 |
+| Workspace presets | Low | Low | Nice UX, not critical path | P3 |
+| Legacy decommission | Low | Low | Maintenance burden, not board-facing | P4 |
 
 ---
 
 ## Sources
 
-- SPEC.md v0.7.0 (canonical architecture specification, cited via CLAUDE.md)
-- `autobot-inbox/src/audit/tier1-deterministic.js` — existing Tier 1 audit implementation
-- `autobot-inbox/src/audit/tier2-ai-auditor.js` — existing Tier 2 audit implementation
-- `autobot-inbox/src/runtime/spec-drift-detector.js` — existing spec drift detection
-- `autobot-inbox/src/runtime/guard-check.js` — G1-G7 constitutional gate enforcement
-- `autobot-inbox/src/runtime/capability-gates.js` — Phase 3 capability gate measurement
-- `autobot-inbox/src/runtime/adversarial-test-suite.js` — sanitizer red-team suite
-- `autobot-inbox/src/runtime/exploration/domains/spec-alignment.js` — exploration domain
-- `autobot-inbox/docs/internal/adrs/006-append-only-audit-trail.md` — hash chain ADR
-- `autobot-inbox/docs/internal/adrs/018-jwt-agent-identity.md` — JWT mandate ADR
-- `.planning/codebase/CONCERNS.md` — tech debt and security gaps catalog
-- `.planning/codebase/ARCHITECTURE.md` — system layer analysis
-- [AuditableLLM: Hash-Chain-Backed Compliance Framework](https://www.mdpi.com/2079-9292/15/1/56) — LOW confidence (external reference, context for hash-chain patterns)
-- [Agentic AI Governance: Strategic Framework](https://www.ewsolutions.com/agentic-ai-governance/) — LOW confidence (external reference, governance framing)
-- [Auditing with Finite State Machines — CertiK](https://www.certik.com/resources/blog/auditing-with-finite-state-machines-a-complementary-methodology) — LOW confidence (external reference, FSM audit patterns)
-- [Multi-tenant PostgreSQL RLS — AWS Database Blog](https://aws.amazon.com/blogs/database/multi-tenant-data-isolation-with-postgresql-row-level-security/) — MEDIUM confidence (official AWS documentation)
-
----
-
-*Feature research for: Optimus Spec Compliance Audit — governed agent organization*
-*Researched: 2026-04-01*
+- PRD v1.0.0 (`dashboard-rebuild.md`) — primary specification, HIGH confidence
+- SPEC.md §2, §8, §9 — governance requirements, HIGH confidence
+- [Grafana Dashboard Best Practices](https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/best-practices/) — plugin/workspace patterns, HIGH confidence
+- [AI Agent Observability — N-iX, 2026](https://www.n-ix.com/ai-agent-observability/) — agent monitoring feature landscape, MEDIUM confidence
+- [AI Agent Dashboard Comparison Guide 2026](https://thecrunch.io/ai-agent-dashboard/) — approval queue and kill switch patterns in production AI dashboards, MEDIUM confidence
+- [The Kill Switch Debate — Medium](https://medium.com/@kavithabanerjee/the-kill-switch-debate-why-every-production-ai-agent-needs-a-hard-stop-39fe5ec05c7b) — HALT control design rationale, MEDIUM confidence (only 40% of orgs have kill-switch capability)
+- [React Flow — Node-Based UIs](https://reactflow.dev/) — DAG visualization library recommendation, HIGH confidence (official docs)
+- [react-grid-layout — npm](https://www.npmjs.com/package/react-grid-layout) — layout persistence pattern (onLayoutChange serialization), HIGH confidence
+- [cmdk — GitHub](https://github.com/pacocoursey/cmdk) — command palette scope and keyboard nav patterns, HIGH confidence
+- [Command Palette UX Patterns](https://uxpatterns.dev/patterns/advanced/command-palette) — keyboard-first navigation patterns, MEDIUM confidence
+- [Bad Dashboard Examples — Databox](https://databox.com/bad-dashboard-examples) — anti-pattern source (metric overload, missing context), MEDIUM confidence
+- [Dashboard Design Patterns](https://dashboarddesignpatterns.github.io/) — structural patterns for operational dashboards, MEDIUM confidence
+- [SSE vs WebSockets vs Long Polling — DEV Community](https://dev.to/haraf/server-sent-events-sse-vs-websockets-vs-long-polling-whats-best-in-2025-5ep8) — SSE reliability and fallback patterns, HIGH confidence

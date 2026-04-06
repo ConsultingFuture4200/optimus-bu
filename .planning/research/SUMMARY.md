@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** Optimus Spec Compliance Audit
-**Domain:** Governed agent organization — spec-vs-code systematic audit and targeted remediation
-**Researched:** 2026-04-01
+**Project:** Board Workstation Plugin Rebuild
+**Domain:** Plugin-based operational dashboard / command console
+**Researched:** 2026-04-05
 **Confidence:** HIGH
 
 ## Executive Summary
 
-This project is a spec compliance audit, not a greenfield build. The target system (Optimus / autobot-inbox) is a live, production-processing governed agent organization: a 6-agent AI pipeline processing real email, governed by six design principles (P1-P6), seven constitutional gates (G1-G7), and a 34-migration Postgres task graph. The stack is fixed by principle P4 (boring infrastructure): Node.js 20+, ESM, `pg` with raw SQL, `node:test`. The audit adds thin, non-invasive tooling — ESLint custom rules, Semgrep semantic analysis, Atlas CLI for schema constraint testing, `jose` for JWT verification tests — all operating at the CLI/CI level without touching the runtime.
+The Board Workstation rebuild is a brownfield migration of an existing 16-page Next.js 15 app into a plugin-based canvas architecture. The project is not building new backend capabilities — the autobot-inbox API (port 3001), Redis pub/sub SSE relay, guardCheck constitutional gates, and all 18 agent endpoints already exist and must not be touched. The entire scope is a new frontend shell: a drag/resize/reorder grid (react-grid-layout v2) that replaces fixed page navigation, 12 purpose-built plugin components that replace 16 fixed pages, and a Cmd+K command palette (cmdk) as the primary navigation surface. Research confirms all required libraries are React 19 / Next.js 15 compatible without flag workarounds, the architectural patterns are well-established (Grafana-scale precedent), and the dependency chain dictates a clear 5-phase build order.
 
-The recommended approach is a strictly bottom-up, four-tier audit sequence: schema and design principle foundations first (Tier 0), identity and enforcement layer second (Tier 1), coordination correctness third (Tier 2), and observability plus Phase 1 exit completeness last (Tier 3). Higher-tier audit findings are unreliable until lower tiers are clean. The most critical audit path runs from schema integrity through JWT/RLS activation through guardCheck-transitionState atomicity. SPEC §5 requires explicit "currently implemented" vs. "target architecture" classification for every finding — conflating the two is the audit's most common failure mode, identified in both PITFALLS.md and ARCHITECTURE.md independently.
+The recommended approach is incremental replacement: build the shell harness first with a single stub plugin to prove hydration and grid layout work, then add the data provider hooks layer, then build plugins in P0 → P1 → P2 → P3 priority order, then add the command palette and workspace persistence, and finally decommission the legacy inbox dashboard. This order is not a preference — it is a hard dependency chain. Plugins cannot exist without the data layer; the command palette cannot be wired without the shell and plugins already mounted; workspace persistence requires the grid to be a controlled component from day one or a full rewrite is required.
 
-The primary risk is pipeline disruption from activating dormant enforcement infrastructure. JWT signing and RLS policy definitions already exist in the codebase; enforcement is partial. Activating RLS without auditing every `withAgentScope()` callsite first will halt the live pipeline by blocking agents from their own DB writes. Mitigation requires a feature flag, full callsite audit, and a staging environment smoke test before any production activation. The secondary risk is scope creep: CONCERNS.md is the authoritative Phase 1 / Phase 2 boundary and must be treated as a scope fence before any compliance fix is written.
+The dominant risks are not architectural — they are operational safety risks specific to this deployment context. HALT control and the Approval Queue are constitutional requirements, and both can silently degrade under Railway's SSE infrastructure constraints (15-minute connection termination, 1MB transfer limit, proxy buffering). The mitigation is explicit: SSE drives display state only; all P0 safety-critical actions (HALT, approve, reject) go through direct REST POST calls that are independent of SSE connection status. Polling fallback (30-second interval via SWR) must be built into the data layer from day one, not retrofitted. Additionally, the workspace persistence schema must include `schemaVersion` from the moment the `board.workspaces` table is created — this costs nothing at creation time and is extremely expensive to retrofit after board members have saved layouts.
 
 ---
 
@@ -19,152 +19,187 @@ The primary risk is pipeline disruption from activating dormant enforcement infr
 
 ### Recommended Stack
 
-The audit tooling slots into the existing Node.js 20+ / ESM / `node:test` / `pg` stack without adding a new runtime or framework. ESLint 10.x with `eslint-plugin-sql` and `eslint-plugin-security` provides static enforcement of P1 (no SQL string interpolation) and G6 (security pattern detection). Semgrep (Python CLI, not npm) handles semantic-level architectural boundary checking that AST-level ESLint cannot express — such as "executor agents must not call strategist functions directly." Atlas CLI provides Postgres-native schema constraint testing via `atlas schema test`, the only tool that can assert constraint behavior by seeding data and verifying rejection. `jose` 6.x (ESM-native, no CVE history) replaces `jsonwebtoken` for any new JWT audit test code. `c8` provides V8-native ESM coverage without transpilation. `node:crypto` (built-in) handles all hash-chain verification — no external library needed and adding one would violate P4.
+The existing stack (Next.js 15.2, React 19, TypeScript 5.7, Tailwind 3, next-auth v4, ioredis 5, @xyflow/react, react-resizable-panels) is already installed and working. Three new dependencies are required: `react-grid-layout@^2.2.3`, `cmdk@^1.1.1`, and `recharts@^3.8.1`. All three declare peer dep ranges that include React 19 — no `--legacy-peer-deps`. No auth migration, no Tailwind upgrade, no framework changes during this milestone.
+
+The critical version note: react-grid-layout v2 (Dec 2025) is a complete TypeScript rewrite with a hooks-based API (`useContainerWidth`, `useGridLayout`). The legacy `WidthProvider` HOC is deprecated. All new grid code must use the v2 hook API. The only residual uncertainty is React 19 runtime behavior at this specific version combination — v2 has limited production reports at React 19 specifically (MEDIUM confidence), warranting a mount-guard pattern (`{mounted && <ReactGridLayout .../>}`) as a precaution.
 
 **Core technologies:**
-- `eslint@10.1.0` + `eslint-plugin-sql@3.4.1` + `eslint-plugin-security@4.0.0`: Static analysis for P1 SQL injection surface and G6 security patterns — flat config, runs locally and in CI without infrastructure
-- `semgrep` (pip): Semantic boundary checking for agent-tier violations that AST-level rules miss — YAML rules are version-controllable and reviewable
-- Atlas CLI (binary, v0.30+): Schema constraint and FK testing against real Postgres — the only tool with native `atlas schema test` for assertion-based DDL verification
-- `jose@6.2.2`: JWT scope verification test writing — ESM-native, no algorithm confusion CVEs, actively maintained
-- `c8@11.0.0`: V8-native ESM coverage — works without transpilation hacks, compatible with `"type": "module"` project
-- `node:crypto` (built-in): SHA-256 hash-chain integrity verification — zero new dependencies, P4-compliant
+- `react-grid-layout@^2.2.3`: drag/resize/reorder grid engine — only library providing drag + resize + responsive breakpoints with React 19 peer deps and no jQuery
+- `cmdk@^1.1.1`: command palette (Cmd+K) — Vercel-maintained, explicit React 19 peer dep, unstyled (no Tailwind conflicts)
+- `recharts@^3.8.1`: charts for cost/pipeline plugins — React 19 peer dep explicit in v3.x, standard Next.js 15 App Router pattern
+- `swr` (already installed): data provider layer — per-key cache deduplication, polling fallback, optimistic updates
+- `react-error-boundary` (add): plugin crash isolation — provides `useErrorBoundary()` hook for async error capture that class-based boundaries miss
+- `next/dynamic` with `ssr: false`: required for the grid shell — ResizeObserver is browser-only; SSR of the grid causes hard hydration errors in React 19
 
-**What NOT to add:** Jest (violates P4, requires Babel/transform for ESM), any ORM for catalog queries (masks SQL, P4 violation), `jsonwebtoken` for new code (CVE history, not ESM-native), Semgrep via npm (the npm package is a stub — install via pip only).
+**Do not add:** next-auth v5 (still beta), Tailwind v4 (breaking config format), any runtime URL plugin loading, WebSockets (SSE is already wired), Zustand/Redux (no global state needed — SWR cache + per-plugin state is sufficient).
 
 ### Expected Features
 
-The audit has a clear MVP boundary. Features are tiered: those required for Phase 1 exit board review, those required before Railway production deployment, and those that are ongoing governance health monitoring (Phase 1.5+). The existing codebase already has substantial audit infrastructure (`tier1-deterministic.js`, `tier2-ai-auditor.js`, `spec-drift-detector.js`, `adversarial-test-suite.js`) — the compliance audit extends and invokes these rather than replacing them.
+This is a board command console for two named principals, not a generic admin dashboard. Feature priorities are dominated by that context: HALT Control and Approval Queue are constitutional requirements whose failure has legal and operational consequences; every other feature is observability or convenience.
 
-**Must have (Phase 1 exit — table stakes):**
-- Design principle P1-P6 sweep — every principle must have at least one verifiable infrastructure enforcement point
-- Agent tier and model assignment verification — all 8 agents mapped to correct spec tier (Opus/Sonnet/Haiku)
-- Agent capability constraint verification — `can_assign_to` lists confirmed explicit (no globs); executors cannot initiate tasks
-- Task graph state machine legal transition check — illegal transitions blocked by DB constraints, not just code
-- Guardrail G1-G7 completeness — all gates present in `gates.json` AND have active `guard-check.js` enforcement paths
-- `guardCheck()` + `transitionState()` atomicity verification — all call sites confirmed in a single Postgres transaction
-- Hash chain integrity — full `verify_all_ledger_chains()` run, append-only trigger existence confirmed
-- Cross-schema isolation — zero cross-schema FKs (SPEC §12)
-- JWT implementation completeness — implementation state mapped against ADR-018 Phase 1 requirements
-- `pg_notify` vs Redis routing — event coordination confirmed not on Redis
-- Phase 1 exit criteria gap map — complete pass/fail table against SPEC §14
+**Must have — table stakes (P0):**
+- Plugin shell (react-grid-layout canvas, PluginSlot, ErrorBoundary per slot, plugin registry)
+- HALT Control — always-visible, always-enabled, direct REST POST, never gated on SSE state
+- Approval Queue — view/approve/reject/edit drafts; mobile-critical (must work at 375px)
+- Data provider layer — 10 typed SWR hooks (useAgents, useDrafts, useApprovals, usePipeline, useCosts, useHaltStatus, useSignals, useGovernance, useTaskGraph, useEventFeed) + 3 mutation hooks
+- Real-time SSE updates with mandatory polling fallback (30s interval)
 
-**Should have (before Railway production deployment — v1.x security hardening):**
-- Token revocation gap analysis — quantify 15-minute TTL exposure window, recommend in-memory blocklist cleared on HALT
-- Permission grants over-breadth scan — flag `resource_id = '*'` grants
-- Linear webhook HMAC gap classification — classify under P1 with remediation path
-- Hash chain JS/SQL parity test — cross-implementation verification (same inputs, same hash from `state-machine.js` and `verify_ledger_chain()` SQL function)
-- Completeness check absence documentation — document which executors have unvalidated outputs
+**Must have — P1:**
+- Command palette (Cmd+K via cmdk) — HALT reachable via keyboard
+- Workspace persistence (board.workspaces Postgres table, useWorkspace hook, schemaVersion from day one)
+- Agent Status plugin — live health of all 18 agents
+- Today Brief plugin — default landing view, daily digest
+- SSE reconnect with exponential backoff + server heartbeat (15–20s keep-alive comment)
 
-**Defer (Phase 1.5+ / ongoing governance health):**
-- Prompt-to-code fidelity deep trace — depends on Phase 2 per-agent role work
-- Behavioral drift detection review — already handled by `tier2-ai-auditor.js` running daily
-- Autonomy level enforcement audit — relevant once system approaches L0 exit conditions
-- Adversarial sanitization test coverage — valuable but not a Phase 1 blocker
-- Audit tier scheduling integrity — operational health monitoring, not compliance
+**Should have — P2/P3:**
+- Pipeline view, Signals feed, Cost Tracker, Governance, Audit Log, DAG Visualization, CLI Workstation, Knowledge Base
+- 5 workspace presets (seeded, read-only templates)
+- Mobile optimization (single-plugin full-screen at <768px, swipe nav, `isDraggable={false}`)
 
-**Anti-features (explicitly out of scope):**
-- Rewriting working code for style compliance (only fix spec violations)
-- Auditing Phase 2+ target architecture items as Phase 1 failures (inflates gap count, misleads board)
-- Generating a compliance score or percentage (reduces nuanced severity to a single number)
-- Deep LLM-based semantic analysis of every agent prompt (duplicates existing tier2 infrastructure, costs $50-80/run)
+**Defer (v1.x after validation):**
+- board-query chat plugin (OQ-4) — architecturally clean drop-in but adds new data path and LLM latency
+- Per-plugin keyboard shortcuts
+- Workspace export/import as JSON
+
+**Explicit anti-features (do not build):**
+- Runtime plugin loading from URLs (violates P1 deny-by-default)
+- Plugin sandboxing via iframes (breaks grid resize, zero security gain for same-origin first-party plugins)
+- User management / RBAC (two fixed users in config)
+- Notification system (agents already communicate via Gmail/Slack/Telegram)
+- Theming / color customization (dark mode is the single theme)
+- Cross-member workspace sync (per-member workspaces, shared presets are read-only)
 
 ### Architecture Approach
 
-The audit is structured as a directed acyclic graph with four tiers, not a linear scan. The dependency ordering is hard: findings at higher tiers are unreliable until lower-tier foundations are verified. Tier 0 (design principles P1-P6 + schema/DDL integrity) must complete before Tier 1 (JWT identity + constitutional gates G1-G7), which must complete before Tier 2 (task graph state machine + agent tier enforcement), which must complete before Tier 3 (hash-chain audit log integrity + Phase 1 exit criteria synthesis). Each audit component uses two-pass verification: static analysis (code vs. spec text) followed by runtime confirmation (exercise the constraint and confirm it fires). Static-only findings are labeled LOW confidence.
+The architecture is a layered client-rendered shell with a clear separation of concerns: the shell (WorkspaceShell, PluginSlot, CommandPalette, WorkspaceBar) owns layout state and plugin mounting; the data provider layer (10 typed SWR hooks) owns all API communication; individual plugin components own nothing but their render logic and call hooks directly. There is no global state store. SWR's per-key cache deduplicates requests across plugins calling the same hook. SSE events invalidate SWR cache keys rather than maintaining parallel local state. The shell is a controlled component — layout state lives in `useWorkspace` (backed by Postgres), not inside react-grid-layout's internal state.
 
 **Major components:**
-1. **Tier 0 — Foundations:** P1-P6 design principle sweep across all `src/**/*.js` + schema integrity check (five schemas in `sql/001-baseline.sql`, zero cross-schema FKs). Cascading — findings here invalidate assumptions in all higher tiers.
-2. **Tier 1 — Identity + Enforcement:** JWT agent identity (`agent-jwt.js`, `withAgentScope()` in `db.js`) + constitutional gates G1-G7 (`guard-check.js` + atomic `transitionState()` in `state-machine.js`). Identity must be verified before gates, because broken identity makes gate findings unreliable.
-3. **Tier 2 — Coordination Correctness:** Task graph state machine (legal transitions, DAG edge integrity, retry/escalation to 3 then escalate) + agent tier enforcement (`config/agents.json` model assignments, `can_assign_to` enforcement in `orchestrator.js`). Only auditable once Tier 1 is clean.
-4. **Tier 3 — Observability + Completeness:** Hash-chain audit log integrity (`state_transitions` SHA-256 chain, append-only triggers, merkle proofs) + Phase 1 exit criteria gap map (every SPEC §14 item either has a code pointer or an explicit "future phase" label). Closes the loop on all lower tiers.
+1. `WorkspaceShell` — react-grid-layout canvas, plugin mounting, workspace state owner; loaded with `dynamic({ ssr: false })`
+2. `PluginSlot` — per-cell ErrorBoundary wrapper; each slot is isolated; crashes render an error card, not a blank workspace
+3. `PLUGIN_REGISTRY` — static compile-time map: pluginId → lazy-loaded component + metadata (defaultSize, mobileFullscreen flag)
+4. Data provider hooks (`hooks/data/*`) — typed SWR wrappers; each hook owns its URL and cache key; plugins import directly, no prop drilling
+5. Mutation hooks (`hooks/mutations/*`) — all writes go to `OPS_API_URL` (port 3001) where guardCheck enforces G1–G8; no Next.js Server Actions for mutations
+6. `useEventStream` (existing) — global SSE singleton; one `EventSource` shared via module-level listeners; never instantiated per plugin
+7. `useWorkspace` — layout + plugin config persistence to `board.workspaces`; react-grid-layout is a controlled component against this hook
+8. `CommandPalette` — global Cmd+K overlay; mounts once at shell level; searches plugin registry + loaded workspace presets + pending drafts
 
-**Classification scheme for every finding:**
-- `CURRENT-IMPLEMENTED`: In codebase and active — verify correctness
-- `CURRENT-PARTIAL`: In codebase but inactive or incomplete — document gap + severity
-- `TARGET-FUTURE`: Spec says Phase 2+ — confirm not falsely claimed as done
-- `CLAIMED-INCOMPLETE`: Code claims it but evidence is absent — flag as critical gap
+**Key patterns to follow:**
+- SSE drives display invalidation (SWR `mutate()` on relevant events), not local state
+- All mutations bypass Next.js Server Actions — direct `fetch(OPS_API_URL + path)`
+- `'use client'` boundaries pushed as far down the tree as possible — only interactive grid/plugin internals need it
+- `schemaVersion` in workspace JSON from migration 001; `migrateWorkspace()` function exists before any layouts are persisted
+- Persist all breakpoint layouts from `onLayoutChange(layout, allLayouts)` — use `allLayouts`, not `layout`, or mobile layouts are lost
+- Debounce `onLayoutChange` persistence by 500–1000ms; write on drag stop, not drag move
 
 ### Critical Pitfalls
 
-1. **Activating dormant RLS enforcement without auditing all callsites first** — The JWT/RLS infrastructure exists but enforcement is optional. Flipping enforcement without wrapping every `query()` callsite in `withAgentScope()` halts the live pipeline immediately. Prevention: feature flag (`ENFORCE_RLS=true`), full grep of all callsites, Docker staging smoke test through a full pipeline cycle before any production activation.
+1. **react-grid-layout SSR hydration crash (CP-1)** — React 19 treats hydration mismatches as hard errors; the entire workspace goes blank. Prevention: `dynamic(() => import('./WorkspaceShell'), { ssr: false })` on the grid shell, mounted guard in `useContainerWidth`. Address in Phase 1 before any plugins exist.
 
-2. **Conflating "currently implemented" with "target architecture" in audit scope** — SPEC §5 describes both the current G1-G7 guardrail system and the Phase 2 target (per-agent DB roles, full RLS). Treating target items as Phase 1 failures wastes weeks building infrastructure that is intentionally deferred. Prevention: create an explicit Phase 1 / Phase 2 scope map from CONCERNS.md before writing any code; treat CONCERNS.md as the authoritative scope fence.
+2. **Railway SSE silent drops making HALT appear stale (CP-2 + CP-5)** — Railway terminates SSE after 15 minutes and ~1MB transfer. The HALT button must be always-visible and always-enabled regardless of SSE connection state. HALT action is a direct REST POST. SSE drives badge counts and display only. Prevention: server heartbeat every 15–20s, `X-Accel-Buffering: no` header, SWR polling fallback (30s), exponential backoff reconnect. Address in Phase 1 data layer.
 
-3. **Breaking guardCheck() + transitionState() atomicity during refactoring** — These two operations must execute in a single Postgres transaction (SPEC §5, P2). Any refactor that separates them — even temporarily — creates a window where agents can bypass constitutional gates. Prevention: never stub `guardCheck()` in tests; any change to `state-machine.js` touching the `BEGIN/COMMIT` block requires an integration test confirming the pair is still atomic.
+3. **Workspace schema without version field silently corrupts layouts on plugin renames (CP-3)** — Once board members have saved workspaces, there is no recovery path without a version field. Prevention: `schemaVersion: 1` in the DDL migration that creates `board.workspaces`; `migrateWorkspace()` function exists before first save. Address in Phase 1 persistence schema.
 
-4. **Losing hash-chain integrity during schema migration** — Migrations that add columns or change types on `agent_graph.state_transitions` can silently corrupt the chain if the hash computation includes schema-dependent fields. Prevention: read `merkle-publisher.js` to confirm hash inputs before any migration on that table; run `verify_all_ledger_chains()` after every migration that touches it.
+4. **Error boundaries do not catch async/event-handler errors (CP-4)** — A button click throwing a network error will bubble uncaught and crash the workspace instead of showing an error card. Prevention: `react-error-boundary` with `useErrorBoundary()` hook so mutation hooks can call `showBoundary(error)` from async catch blocks. Establish as part of plugin host contract in Phase 1.
 
-5. **Audit scope creep from "fix while you're in there" impulse** — Compliance audits expose code smells. Each unrelated fix increases blast radius and makes regressions impossible to bisect. Prevention: one spec violation per commit; commit message must name the spec section; any secondary finding goes to a tracked work item, never fixed inline.
+5. **onLayoutChange debounce missing — database hammered during drag (Performance Trap)** — Without debouncing, every pixel of drag movement triggers a Postgres write. Prevention: debounce persistence by 500–1000ms; write on drag stop (`onDragStop`, `onResizeStop` callbacks), not on every `onLayoutChange` tick.
 
 ---
 
 ## Implications for Roadmap
 
-Based on combined research, the audit naturally decomposes into four sequential phases that mirror the architectural tier structure. The hard constraint is dependency ordering: no phase should begin until the phase below it has clean findings.
+Based on the architecture dependency chain and pitfall-to-phase mapping, a 5-phase structure is indicated. The chain is strict: shell scaffolding must precede data hooks; data hooks must precede plugins; plugins must exist before command palette and workspace presets can be wired; decommission is last.
 
-### Phase 1: Scope Lock and Audit Setup
+### Phase 1: Shell Scaffold + Safety Foundation
 
-**Rationale:** The most dangerous pitfall (conflating Phase 1 vs. Phase 2 scope) strikes before any code is written. CONCERNS.md already contains board-reviewed timelines — this phase formalizes those as an explicit scope document before any audit work starts. Tooling installation goes here so it is done once and confirmed working before the audit begins.
-**Delivers:** Explicit Phase 1 / Phase 2 scope map signed off by board; audit tooling installed and verified (`eslint-plugin-sql`, `eslint-plugin-security`, Semgrep, Atlas CLI, `jose`, `c8`); initial ESLint flat config (`eslint.config.js`); Phase-labeled checklist for all SPEC.md sections.
-**Addresses:** Anti-feature: "Audit Phase 2+ target architecture as failures"; FEATURES.md anti-feature: "Generate a compliance score or percentage."
-**Avoids:** Pitfall 2 (scope conflation); Pitfall 4 (scope creep).
+**Rationale:** The grid shell, plugin slot contract, error boundary pattern, SSE fallback strategy, and workspace schema versioning are all foundational decisions that cannot be changed without rewriting downstream code. CP-1, CP-3, CP-4, CP-5 all demand Phase 1 resolution. Building a stub plugin in Phase 1 proves the harness works before investing in 12 real plugins.
 
-### Phase 2: Tier 0 — Foundations (Schema + Design Principles)
+**Delivers:**
+- WorkspaceShell with `dynamic({ ssr: false })` and `useContainerWidth` mounted guard
+- PluginSlot with `react-error-boundary` + `useErrorBoundary` contract
+- PLUGIN_REGISTRY (static compile-time map, lazy imports)
+- Stub plugin (e.g., HelloPlugin) proving the harness renders and grid layout serializes correctly
+- `board.workspaces` DDL migration with `schemaVersion: 1` and `migrateWorkspace()` function
+- WorkspaceBar skeleton and WorkspaceShell → WorkspaceBar wiring
+- SSE reconnect + heartbeat + polling fallback baked into `useEventStream` extension (or confirm existing implementation satisfies CP-2)
 
-**Rationale:** Every other finding depends on the schema being correct and P1-P6 being applied. A P2 violation found here (enforcement boundary in a prompt, not in infrastructure) may invalidate assumptions in all later phases. Auditing gates before schema is clean produces unreliable results.
-**Delivers:** Complete P1-P6 enforcement classification per module (INFRA / ADVISORY / UNVERIFIED); schema integrity report (five schemas confirmed, cross-schema FK count confirmed zero); Semgrep YAML rules for architectural boundary violations; ESLint rules for SQL injection surface.
-**Uses:** `eslint-plugin-sql` for P1 SQL scan; `semgrep` for semantic boundary rules; `pg` catalog queries (`information_schema.referential_constraints`) for cross-schema FK check; Atlas CLI for DDL constraint verification.
-**Implements:** Tier 0 of audit architecture DAG.
-**Avoids:** Anti-pattern 1 (auditing high-level before foundations).
+**Addresses:** CP-1 (hydration), CP-2 (SSE drops), CP-3 (schema version), CP-4 (error boundary gaps), CP-5 (HALT SSE dependency)
+**Avoids:** Building any plugins before the harness is proven
 
-### Phase 3: Tier 1 — Identity and Enforcement (JWT + Constitutional Gates)
+### Phase 2: Data Provider Layer
 
-**Rationale:** JWT identity must be verified before constitutional gates, because broken identity makes gate findings unreliable (an agent could claim a different tier and bypass a gate entirely). RLS enforcement activation — the highest-risk operation in the entire project — belongs in this phase, with its feature flag and staging gate as mandatory acceptance criteria.
-**Delivers:** JWT implementation completeness map against ADR-018 Phase 1 requirements (CURRENT-IMPLEMENTED / CURRENT-PARTIAL / TARGET-FUTURE per item); RLS enforcement activated with feature flag and verified against full pipeline smoke test; G1-G7 completeness report (config + code path + runtime gate-violation test per gate); `guardCheck()` + `transitionState()` atomicity confirmed at all callsites.
-**Uses:** `jose` for JWT forge/verify tests; `pg` catalog queries for `pg_policies` and `relrowsecurity` status; Atlas CLI for constraint behavior testing.
-**Implements:** Tier 1 of audit architecture DAG.
-**Avoids:** Pitfall 1 (premature RLS activation); Pitfall 3 (guard check atomicity breakage); Pitfall 5 (over-engineering to match target architecture).
+**Rationale:** All 12 plugins depend on typed data hooks. Building plugins before hooks exist forces either stub data or repeated refactors when hooks are added. The data layer is also where SSE invalidation, polling fallback timing, and mutation guardCheck routing are standardized for all plugins.
 
-### Phase 4: Tier 2 — Coordination Correctness (Task Graph + Agent Tiers)
+**Delivers:**
+- `lib/api-client.ts` — typed fetch wrapper with `OPS_API_URL` base and auth headers
+- All 10 typed SWR data hooks (`useAgents`, `useDrafts`, `useApprovals`, `usePipeline`, `useCosts`, `useHaltStatus`, `useSignals`, `useGovernance`, `useTaskGraph`, `useEventFeed`)
+- All 3 mutation hooks (`useApproveDraft`, `useRejectDraft`, `useHaltToggle`)
+- `useWorkspace` hook (load/save workspace layout + plugin configs to `board.workspaces`)
+- SWR polling fallback (30s `refreshInterval`) as standard per-hook config
+- SSE → SWR cache invalidation pattern documented and demonstrated
 
-**Rationale:** State machine correctness and agent tier enforcement are only auditable once identity (Tier 1) is trustworthy. A verified identity layer means agent tier claims in work items are reliable. DAG edge integrity checks are meaningful only when the schema (Tier 0) is confirmed correct.
-**Delivers:** Task graph state machine report (legal transitions only, DB constraints confirmed, retry counter ≤3 then escalate verified); DAG edge integrity check (no orphans, no cycles); agent tier enforcement report (all 8 agents mapped to correct model, `can_assign_to` lists confirmed explicit with no globs, executor task initiation blocked at code level, not just config); `pg_notify` vs Redis routing confirmed.
-**Uses:** `pg` catalog queries and `node:test` integration tests for illegal transition rejection; Semgrep rules for "executor cannot initiate tasks" code boundary; `config/agents.json` comparison against SPEC §2 tier table.
-**Implements:** Tier 2 of audit architecture DAG.
-**Avoids:** Anti-pattern 4 (treating `agents.json` as sufficient tier enforcement); Pitfall 4 (scope creep during `api.js` inspection).
+**Addresses:** Data correctness for all downstream plugins; mutation path through guardCheck (not Server Actions)
+**Uses:** `swr`, `lib/api-client.ts`, existing `useEventStream`, `OPS_API_URL`
 
-### Phase 5: Tier 3 — Observability + Phase 1 Exit Map (Hash Chain + §14 Synthesis)
+### Phase 3: Core Plugins (P0 first, then P1/P2/P3)
 
-**Rationale:** Hash-chain audit log integrity is verified last because it depends on state transitions being written correctly (Tier 2). The Phase 1 exit criteria gap map is the synthesized output of all prior findings — it cannot be written until every individual check has run and produced a classified finding.
-**Delivers:** Full `verify_all_ledger_chains()` run with broken-link count; append-only trigger existence confirmed (`trg_state_transitions_no_update`, `trg_state_transitions_no_delete`); hash chain JS/SQL parity test (cross-implementation verification); complete Phase 1 exit gap map — pass/fail table against all SPEC §14 exit criteria with phase labeling.
-**Uses:** `node:crypto` for hash-chain integrity verification; `pg` direct queries for trigger inspection; `merkle-publisher.js` for replay verification.
-**Implements:** Tier 3 of audit architecture DAG.
-**Avoids:** Pitfall 3 (hash-chain corruption from migration); anti-pattern 2 (static analysis without runtime verification).
+**Rationale:** P0 plugins (HALT Control, Approval Queue) are constitutional requirements with safety implications and must be built and reviewed before P1/P2/P3 plugins. Once the two P0 plugins prove the plugin development pattern, the remaining 10 plugins follow the same pattern and can be built in parallel or sequence as capacity allows.
 
-### Phase 6: Security Hardening (v1.x — Pre-Railway Deployment)
+**Delivers:**
+- HaltControlPlugin — always-visible button, always-enabled, direct `useHaltToggle()` REST POST, SSE-independent, explicit review gate before ship
+- ApprovalQueuePlugin — draft list with approve/reject/edit, SSE invalidation on `draft_ready`, mobile-first layout (min-width 375px)
+- Remaining 10 plugins in P1 → P2 → P3 order: Today Brief, Agent Status, Pipeline, Signals, Cost Tracker, Governance, Audit Log, DAG Visualization, CLI Workstation, Knowledge Base
 
-**Rationale:** After the Phase 1 exit compliance map is complete and findings are addressed, a second pass covers the security surface that is not strictly Phase 1 exit criteria but is required before Railway production deployment. These items are lower complexity but have meaningful security impact.
-**Delivers:** Token revocation gap analysis with recommendation (in-memory blocklist cleared on HALT); `permission_grants` over-breadth scan (flag `resource_id = '*'` grants); Linear webhook HMAC fallback classified under P1 with interim remediation (rate limiting + IP allowlist until HMAC validates correctly); completeness check absence documented in task graph as tracked work item.
-**Avoids:** Security mistake: "Fixing the Linear HMAC fallback by removing it entirely"; Pitfall: overly broad permission grants introduced during compliance fixes.
+**Addresses:** All 12 items in the 12-plugin registry; feature parity matrix sign-off before any legacy page is decommissioned
+**Implements:** All plugin architecture patterns (Pattern 1 through 6 from ARCHITECTURE.md)
+**Avoids:** HALT gated on SSE state (CP-5 explicit check before HALT plugin ships)
+
+### Phase 4: Command Palette, Workspace Presets, Mobile Optimization
+
+**Rationale:** The command palette requires the plugin registry and loaded workspace state to be queryable — it cannot be built before plugins and workspace persistence exist. Workspace presets require all 12 plugins to be registered. Mobile optimization (swipe nav, `isDraggable={false}`) requires the full plugin set to test against.
+
+**Delivers:**
+- CommandPalette (`cmdk`, global Cmd+K, searches plugins + workspaces + pending drafts, HALT reachable in 2 keystrokes)
+- 5 workspace presets (`workspace-presets.ts`, seeded as read-only system workspaces, applying creates a new workspace not overwrites current)
+- Mobile breakpoint behavior (single-plugin full-screen at <768px, swipe nav, drag disabled, validated on real iOS Safari not emulation)
+- WorkspaceBar preset switcher and add-plugin button
+
+**Addresses:** Keyboard-first navigation (SPEC D5); power-user efficiency; mobile approval queue requirement
+**Avoids:** Preset applying overwriting current layout (UX pitfall from PITFALLS.md)
+
+### Phase 5: Legacy Decommission
+
+**Rationale:** Decommission happens last, after explicit feature parity sign-off. Every workflow from the 16 existing fixed pages must be verifiable in the new plugins before the legacy inbox dashboard (port 3100 / inbox.staqs.io) is removed. Domain redirect must be configured in Railway before the service is deleted.
+
+**Delivers:**
+- Feature parity matrix signed off (one row per existing page function, verified in plugin equivalent)
+- Legacy inbox dashboard service removed from docker-compose and Railway
+- `inbox.staqs.io` domain redirect configured to `board.staqs.io` before service deletion
+- Lighthouse performance validation (shell load <2s desktop / <3s mobile per PRD exit criteria)
+
+**Addresses:** Legacy maintenance burden; PRD exit criteria; domain redirect gap (from "Looks Done But Isn't" checklist)
+**Avoids:** 404 on inbox.staqs.io after decommission
+
+---
 
 ### Phase Ordering Rationale
 
-- **Dependency ordering is strict.** The four audit tiers form a DAG, and the research independently converged on the same ordering from two directions (ARCHITECTURE.md bottom-up analysis and FEATURES.md dependency graph). This is not an arbitrary sequence — a failed Tier 0 finding can invalidate Tier 2 results.
-- **RLS activation is isolated to Phase 3.** It is the highest-risk operation in the project and must be the only change in its commit, wrapped in a feature flag, and staged before production. Spreading JWT/RLS work across multiple phases increases the risk of partial activation.
-- **Security hardening is decoupled from Phase 1 exit.** The Phase 1 exit gate is about SPEC §14 compliance. The security hardening phase addresses real-world deployment risks that are not SPEC §14 items. Mixing them muddies both goals.
-- **Scope lock is Phase 1, not a pre-work assumption.** CONCERNS.md is the boundary document, but the board-confirmed scope map must be an explicit deliverable — not an implicit assumption — before any code changes start.
+- **Foundation before features:** Shell (Phase 1) and data layer (Phase 2) are hard prerequisites for all plugins. This is not a design preference — it is the literal dependency chain from ARCHITECTURE.md step 1–9.
+- **Safety-critical first within Phase 3:** HALT Control and Approval Queue have constitutional and legal weight. They get the first implementation slots and an explicit review gate, not the last.
+- **Composition before orchestration:** Command palette (Phase 4) requires the plugin registry and workspace state from Phase 3 to be queryable. Building it earlier would require stub data that gets discarded.
+- **Decommission last:** Any legacy page decommissioned before its feature parity is confirmed in the new plugin represents lost functionality with no recovery path.
+- **Schema versioning in Phase 1, not Phase 3:** Moving `schemaVersion` to "when we add workspace persistence" means the first saved layouts have no version field. Retrofitting costs a migration plus custom board-member data recovery. The cost in Phase 1 is a single JSON field.
 
 ### Research Flags
 
-Phases likely needing deeper research or verification during planning:
-- **Phase 3 (JWT/RLS):** RLS activation on a live system with in-flight transactions is complex. The "drain all in-flight work items before activating" requirement (PITFALLS.md) needs a concrete runbook. ADR-018 Phase 1 scope should be re-confirmed with both board members before coding begins — the board decision was 2026-03-07 and scope may have drifted.
-- **Phase 5 (Hash Chain):** The hash chain JS/SQL parity test (does `state-machine.js` `computeHashChain()` produce identical output to the SQL `verify_ledger_chain()` function for identical inputs?) requires reading both implementations carefully before writing the test. A format string divergence would cause silent verification failure.
+Phases with standard, well-documented patterns (skip additional research-phase):
+- **Phase 2 (Data layer):** SWR + typed hooks + REST is a standard Next.js 15 pattern; ample documentation and prior art.
+- **Phase 4 (Command palette):** cmdk API is well-documented; shadcn/ui has extensive examples.
+- **Phase 5 (Decommission):** Operational checklist, not a technical challenge requiring research.
 
-Phases with standard patterns (skip research-phase):
-- **Phase 1 (Scope Lock):** Cross-referencing CONCERNS.md against SPEC.md is a reading and documentation task. No new research needed.
-- **Phase 2 (Foundations):** ESLint custom rules, Semgrep YAML, and `information_schema` FK queries are well-documented. Patterns are established.
-- **Phase 4 (Coordination):** Agent tier config comparison and state machine transition testing are standard patterns with no novel infrastructure.
-- **Phase 6 (Security Hardening):** All items are targeted SQL queries or code traces. No novel infrastructure.
+Phases that may benefit from targeted research during planning:
+- **Phase 1 (Shell scaffold):** react-grid-layout v2 has limited React 19 production reports. The mounted guard pattern and `useContainerWidth` hook API should be validated against the actual v2.2.3 package before writing the WorkspaceShell. Recommend reading the v2 CHANGELOG and RFC before the phase planning session.
+- **Phase 3 (DAG Visualization plugin):** @xyflow/react is already installed and working, but the dagre layout integration for task graph DAGs is non-trivial. Recommend a brief spike on the dagre layout adapter before estimating the DAG visualization plugin.
+- **Phase 3 (CLI Workstation plugin):** xterm.js is already in the stack but the wrapping pattern inside a resizable react-grid-layout cell (where dimensions change on drag) needs validation. Terminal resize events must be forwarded to xterm when the grid cell resizes.
 
 ---
 
@@ -172,48 +207,50 @@ Phases with standard patterns (skip research-phase):
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Core tooling verified via npm registry (April 2026). ESM compatibility for `jose`, `c8`, and ESLint 10 flat config confirmed. Semgrep performance improvements from Sep 2025 confirmed. All tools vetted against existing `"type": "module"` project constraints. |
-| Features | HIGH | Audit scope derived directly from codebase analysis (`CONCERNS.md`, ADR-018, `tier1-deterministic.js`, `spec-drift-detector.js`). Existing audit infrastructure is well-documented. Phase boundaries derive from board-reviewed CONCERNS.md timelines. |
-| Architecture | HIGH | Four-tier ordering derived from two independent sources: ARCHITECTURE.md bottom-up analysis and FEATURES.md dependency graph. Both arrive at the same sequence. Classification scheme (CURRENT-IMPLEMENTED / CURRENT-PARTIAL / TARGET-FUTURE / CLAIMED-INCOMPLETE) is grounded in actual SPEC §5 language and codebase state. |
-| Pitfalls | HIGH | All six critical pitfalls are grounded in specific files and line numbers in the live codebase (`CONCERNS.md`, `agent-jwt.js`, `withAgentScope()`, `state-machine.js`). Not theoretical — each has a concrete "warning signs" list and a recovery strategy. |
+| Stack | HIGH (core), MEDIUM (rgl v2 React 19 runtime) | All peer deps verified from package.json. react-grid-layout v2 was released Dec 2025 — limited React 19 production reports but v2 API is fully documented. |
+| Features | HIGH | Grounded in PRD v1.0.0, SPEC.md §2/§8/§9, and verified against the existing codebase. No speculation required — the backend is built, the feature set is determined. |
+| Architecture | HIGH | Existing codebase read directly. All patterns cross-referenced against Next.js 15 official docs and community sources. The 6 architectural anti-patterns are all grounded in specific GitHub issues or official docs. |
+| Pitfalls | HIGH | Railway SSE limits confirmed from official Railway docs. Hydration crash confirmed from Next.js GitHub issues. Schema versioning gap confirmed from react-grid-layout GitHub issues. Error boundary gap confirmed from React docs. |
 
-**Overall confidence:** HIGH
+**Overall confidence: HIGH**
 
 ### Gaps to Address
 
-- **`withAgentScope()` callsite completeness:** PITFALLS.md identifies this as the highest-risk gap but does not enumerate the complete callsite list. During Phase 3 planning, run `grep -rn 'withAgentScope\|db.query' src/` to produce the full list before estimating RLS activation effort.
-- **Hash computation field list for `state_transitions`:** PITFALLS.md warns that migration safety depends on knowing which fields are included in the hash computation. Read `merkle-publisher.js` and `infrastructure.js` before Phase 5 planning to confirm the field list.
-- **ADR-018 Phase 1 scope drift:** The board decision was 2026-03-07. Before Phase 3 begins, re-confirm with both board members that the Phase 1 JWT/RLS scope documented in ADR-018 has not drifted. PITFALLS.md flags this explicitly.
-- **`inbox.drafts` view consumer count:** PITFALLS.md identifies a three-step migration (migrate consumers, verify zero references, drop view). The consumer list (API routes, dashboard pages, CLI scripts) should be enumerated during Phase 2 or 3 planning to scope the migration effort.
-- **Content sanitization implementation status:** ARCHITECTURE.md classifies content sanitization as `UNVERIFIED` — no clear reference in the codebase map. This should be located and classified before Phase 2 begins.
+- **react-grid-layout v2 React 19 runtime behavior:** The v2 API is documented and peer deps are correct, but production reports at the exact React 19 + Next.js 15.2 + rgl 2.2.3 combination are thin (library released Dec 2025). Mitigate with mounted guard and a small integration test in Phase 1 before committing to the full shell design.
+
+- **SSE heartbeat implementation in port 3001:** PITFALLS.md recommends server-side heartbeat comments (`": keep-alive\n\n"` every 15–20s) to prevent Railway proxy buffering. Research did not verify whether the existing SSE relay in `autobot-inbox/` already sends heartbeats. This should be checked before assuming the fix is purely client-side. If not present, a small backend change to `autobot-inbox/` may be required — which is outside the stated scope ("API is UNTOUCHED").
+
+- **board.workspaces Postgres table location:** ARCHITECTURE.md references a "board-side Postgres" instance for workspace persistence. The project's docker-compose has a single Postgres service. Clarify whether `board.workspaces` goes into the existing `autobot-inbox` Postgres (as a new schema) or requires a second database instance before writing the migration.
+
+- **Feature parity matrix:** PITFALLS.md flags maintaining an explicit parity matrix before decommissioning any legacy page. This matrix does not exist yet. It should be a deliverable within Phase 3 planning (created before Phase 5 execution begins), not a post-hoc verification.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- SPEC.md v0.7.0 (canonical architecture specification, `autobot-spec/SPEC.md`)
-- `.planning/codebase/CONCERNS.md` — tech debt, known gaps, board-reviewed timelines
-- `.planning/codebase/ARCHITECTURE.md` — system layers, data flow, state management
-- `autobot-inbox/docs/internal/adrs/018-jwt-agent-identity.md` — Phase 1 vs Phase 2 JWT/RLS scope
-- `autobot-inbox/docs/internal/adrs/006-append-only-audit-trail.md` — hash chain design
-- npm registry (live, April 2026) — version verification for `eslint@10.1.0`, `jose@6.2.2`, `eslint-plugin-sql@3.4.1`, `eslint-plugin-security@4.0.0`, `c8@11.0.0`
-- [PostgreSQL RLS Documentation](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) — `pg_class.relrowsecurity`, `pg_policies` catalog queries confirmed
-- [Atlas schema testing docs](https://atlasgo.io/testing/schema) — `atlas schema test` for constraint/FK/trigger testing in Postgres
-- [jose GitHub](https://github.com/panva/jose) — ESM-native, actively maintained
+- `board/package.json` — existing dependency versions, verified directly
+- `dashboard-rebuild.md` (PRD v1.0.0) — primary feature specification
+- `SPEC.md §2, §8, §9` — governance requirements, agent tier architecture, task funnel
+- react-grid-layout v2 CHANGELOG and RFC: https://github.com/react-grid-layout/react-grid-layout
+- cmdk GitHub releases (peer dep verification): https://github.com/pacocoursey/cmdk/releases
+- Railway SSE documentation: https://docs.railway.com/guides/sse-vs-websockets
+- Next.js 15 App Router official docs
+- react-error-boundary official docs
 
 ### Secondary (MEDIUM confidence)
-- [Semgrep September 2025 release notes](https://semgrep.dev/docs/release-notes/september-2025) — 3x performance improvement, native Windows support
-- [Testing RLS with Atlas](https://atlasgo.io/faq/testing-rls) — non-superuser testing requirement
-- [WorkOS: Architecture of governable AI agents](https://workos.com/blog/ai-agents-architecture) — JWT intent binding patterns
-- [Refactoring Databases Is a Different Animal](https://newsletter.systemdesignclassroom.com/p/refactoring-databases-is-a-different-animal) — Expand/Contract pattern for schema refactoring risks
-- [AI Governance: Infrastructure vs Prompt-Based Controls](https://air-governance-framework.finos.org/mitigations/mi-16_preserving-source-data-access-controls-in-ai-systems.html) — infrastructure enforcement reliability (aligns with P2)
+- Grafana dashboard best practices: https://grafana.com/docs/grafana/latest/dashboards/build-dashboards/best-practices/
+- N-iX AI agent observability guide (2026): https://www.n-ix.com/ai-agent-observability/
+- Railway SSE 1MB transfer limit (community report): https://station.railway.com/questions/are-there-limits-on-total-transfer-size-3c991de1
+- SSE proxy buffering post-mortem: https://dev.to/miketalbot/server-sent-events-are-still-not-production-ready-after-a-decade-a-lesson-for-me-a-warning-for-you-2gie
+- react-grid-layout hydration mismatch: https://oneuptime.com/blog/post/2026-01-24-fix-hydration-mismatch-errors-nextjs/view
+- Dashboard schema versioning: https://github.com/perses/perses/discussions/1186
 
-### Tertiary (LOW confidence)
-- [AuditableLLM: Hash-Chain-Backed Compliance Framework](https://www.mdpi.com/2079-9292/15/1/56) — hash-chain patterns in LLM audit systems (single source)
-- [DEV Community: Why delete jsonwebtoken in 2025](https://dev.to/silentwatcher_95/why-you-should-delete-jsonwebtoken-in-2025-1o7n) — `jose` preference over `jsonwebtoken` (single source, aligns with jose trajectory)
-- [CertiK: Auditing with Finite State Machines](https://www.certik.com/resources/blog/auditing-with-finite-state-machines-a-complementary-methodology) — FSM audit patterns (external, needs validation against this specific system)
+### Tertiary (contextual)
+- AI Agent Dashboard Comparison Guide 2026: https://thecrunch.io/ai-agent-dashboard/
+- The Kill Switch Debate: https://medium.com/@kavithabanerjee/the-kill-switch-debate-why-every-production-ai-agent-needs-a-hard-stop-39fe5ec05c7b
 
 ---
-*Research completed: 2026-04-01*
+
+*Research completed: 2026-04-05*
 *Ready for roadmap: yes*
