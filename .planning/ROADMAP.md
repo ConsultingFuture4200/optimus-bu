@@ -32,8 +32,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. board.workspaces Postgres table exists with schemaVersion field; migrateWorkspace() function exists before any layout is saved
 **Plans**: 3 plans
 Plans:
-- [ ] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
-- [ ] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
+- [x] 01-01-PLAN.md — Foundation: deps, plugin types, registry, error boundary, DB setup, DDL
+- [x] 01-02-PLAN.md — Grid shell: PluginShell, GridArea, PluginPane, stub plugins, layout swap
 - [ ] 01-03-PLAN.md — Workspace persistence: workspaces lib, API route, auto-save/load, human verify
 **UI hint**: yes
 
@@ -107,7 +107,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Shell Scaffold | 0/3 | Not started | - |
+| 1. Shell Scaffold | 2/3 | In Progress|  |
 | 2. Data Provider Layer | 0/TBD | Not started | - |
 | 3. Core Plugins | 0/TBD | Not started | - |
 | 4. Command Palette, Presets, and Mobile | 0/TBD | Not started | - |

@@ -7,15 +7,15 @@
 
 ### Shell Infrastructure
 
-- [ ] **SHELL-01**: Plugin shell renders draggable/resizable grid panes via react-grid-layout
-- [ ] **SHELL-02**: Plugin registry loads all plugins at build time (compile-time imports, no runtime loading)
-- [ ] **SHELL-03**: Plugin lifecycle calls onActivate() when pane opens and onDeactivate() when closed
-- [ ] **SHELL-04**: React error boundary per plugin pane — crash shows error card with retry, does not affect adjacent plugins
-- [ ] **SHELL-05**: Error boundaries handle async errors via useErrorBoundary hook (not just render errors)
-- [ ] **SHELL-06**: Layout serializes to JSON and restores from JSON exactly (round-trip fidelity)
-- [ ] **SHELL-07**: Grid shell uses `ssr: false` / dynamic import with mounted guard to prevent hydration mismatch
-- [ ] **SHELL-08**: Shell loads in < 2s on desktop, < 3s on mobile
-- [ ] **SHELL-09**: Plugin activation time < 500ms per plugin
+- [x] **SHELL-01**: Plugin shell renders draggable/resizable grid panes via react-grid-layout
+- [x] **SHELL-02**: Plugin registry loads all plugins at build time (compile-time imports, no runtime loading)
+- [x] **SHELL-03**: Plugin lifecycle calls onActivate() when pane opens and onDeactivate() when closed
+- [x] **SHELL-04**: React error boundary per plugin pane — crash shows error card with retry, does not affect adjacent plugins
+- [x] **SHELL-05**: Error boundaries handle async errors via useErrorBoundary hook (not just render errors)
+- [x] **SHELL-06**: Layout serializes to JSON and restores from JSON exactly (round-trip fidelity)
+- [x] **SHELL-07**: Grid shell uses `ssr: false` / dynamic import with mounted guard to prevent hydration mismatch
+- [x] **SHELL-08**: Shell loads in < 2s on desktop, < 3s on mobile
+- [x] **SHELL-09**: Plugin activation time < 500ms per plugin
 
 ### Command Palette
 
@@ -132,15 +132,15 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SHELL-01 | Phase 1 | Pending |
-| SHELL-02 | Phase 1 | Pending |
-| SHELL-03 | Phase 1 | Pending |
-| SHELL-04 | Phase 1 | Pending |
-| SHELL-05 | Phase 1 | Pending |
-| SHELL-06 | Phase 1 | Pending |
-| SHELL-07 | Phase 1 | Pending |
-| SHELL-08 | Phase 1 | Pending |
-| SHELL-09 | Phase 1 | Pending |
+| SHELL-01 | Phase 1 | Complete |
+| SHELL-02 | Phase 1 | Complete |
+| SHELL-03 | Phase 1 | Complete |
+| SHELL-04 | Phase 1 | Complete |
+| SHELL-05 | Phase 1 | Complete |
+| SHELL-06 | Phase 1 | Complete |
+| SHELL-07 | Phase 1 | Complete |
+| SHELL-08 | Phase 1 | Complete |
+| SHELL-09 | Phase 1 | Complete |
 | DATA-01 | Phase 2 | Pending |
 | DATA-02 | Phase 2 | Pending |
 | DATA-03 | Phase 2 | Pending |

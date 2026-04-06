@@ -2,16 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-04-06T19:41:44.545Z"
-last_activity: 2026-04-05 — Roadmap created, all 55 requirements mapped across 5 phases
+status: Ready to execute
+stopped_at: Completed 01-shell-scaffold-02-PLAN.md
+last_updated: "2026-04-06T22:53:40.199Z"
 progress:
   total_phases: 5
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 3
+  completed_plans: 2
 ---
 
 # Project State
@@ -21,16 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** The board's operational control surface works reliably through composable plugins — and every future feature drops in as a plugin instead of restructuring a monolith.
-**Current focus:** Phase 1: Shell Scaffold
+**Current focus:** Phase 01 — shell-scaffold
 
 ## Current Position
 
-Phase: 1 of 5 (Shell Scaffold)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-04-05 — Roadmap created, all 55 requirements mapped across 5 phases
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 01 (shell-scaffold) — EXECUTING
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -52,6 +46,8 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 01-shell-scaffold P01 | 15 | 2 tasks | 7 files |
+| Phase 01-shell-scaffold P02 | 35 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -65,6 +61,11 @@ Recent decisions affecting current work:
 - [Pre-build]: SSE drives display invalidation only; all P0 actions (HALT, approve, reject) use direct REST POST
 - [Pre-build]: schemaVersion required in board.workspaces DDL from Phase 1 — retrofitting after first save is expensive
 - [Pre-build]: Per-member workspaces, shared read-only presets
+- [Phase 01-shell-scaffold]: Plugin registry is compile-time only (Map in module scope) — no dynamic URL loading per SHELL-02
+- [Phase 01-shell-scaffold]: member_id in board.workspaces is TEXT (GitHub username), not a FK — no cross-schema foreign keys per CLAUDE.md
+- [Phase 01-shell-scaffold]: PluginShell requires 'use client' in Next.js 15 App Router — next/dynamic with ssr:false is prohibited in Server Components
+- [Phase 01-shell-scaffold]: react-grid-layout v2 Layout type is readonly LayoutItem[] — useState<Layout> not useState<Layout[]>
+- [Phase 01-shell-scaffold]: useContainerWidth(measureBeforeMount: true) provides mounted flag directly — no separate useState(false) needed for hydration guard
 
 ### Pending Todos
 
@@ -78,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-06T19:41:44.541Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-shell-scaffold/01-CONTEXT.md
+Last session: 2026-04-06T22:53:40.195Z
+Stopped at: Completed 01-shell-scaffold-02-PLAN.md
+Resume file: None
