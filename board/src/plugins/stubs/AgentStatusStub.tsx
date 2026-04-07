@@ -17,6 +17,8 @@ export const agentStatusPlugin: OptimusPlugin = {
   manifest: {
     id: 'optimus.agent-status',
     name: 'Agent Status',
+    description: 'Live status of all agents — tiers, activity, errors, and throughput.',
+    author: 'Optimus Core',
     version: '0.1.0',
     category: 'system',
     dataDependencies: ['useAgents'],

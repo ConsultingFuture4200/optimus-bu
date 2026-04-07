@@ -17,6 +17,8 @@ export const todayBriefPlugin: OptimusPlugin = {
   manifest: {
     id: 'optimus.today-brief',
     name: 'Today Brief',
+    description: 'Daily summary of pending approvals, agent activity, and key signals.',
+    author: 'Optimus Core',
     version: '0.1.0',
     category: 'ops',
     dataDependencies: ['useTodayBrief', 'useDrafts', 'useSignals'],

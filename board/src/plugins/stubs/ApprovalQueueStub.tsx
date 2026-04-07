@@ -17,6 +17,8 @@ export const approvalQueuePlugin: OptimusPlugin = {
   manifest: {
     id: 'optimus.approval-queue',
     name: 'Approval Queue',
+    description: 'Review, approve, edit, or reject agent-drafted messages before they send.',
+    author: 'Optimus Core',
     version: '0.1.0',
     category: 'workflow',
     dataDependencies: ['useDrafts'],

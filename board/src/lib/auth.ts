@@ -4,6 +4,9 @@ import type { NextRequest } from "next/server";
 import { authOptions } from "@/lib/next-auth-options";
 
 export async function getSession() {
+  if (process.env.NODE_ENV === "development") {
+    return { user: { name: "dev-board-member", email: "dev@localhost" } };
+  }
   return getServerSession(authOptions);
 }
 

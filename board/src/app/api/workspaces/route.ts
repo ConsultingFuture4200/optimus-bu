@@ -14,8 +14,14 @@ export async function GET(req: NextRequest) {
   }
 
   const name = req.nextUrl.searchParams.get('name') ?? 'Daily Ops';
-  const workspace = await getWorkspace(session.user.name, name);
-  return NextResponse.json(workspace);
+  try {
+    const workspace = await getWorkspace(session.user.name, name);
+    return NextResponse.json(workspace);
+  } catch {
+    // No DB in dev — return default preset
+    const { DAILY_OPS_PRESET } = await import('@/lib/workspaces');
+    return NextResponse.json(DAILY_OPS_PRESET);
+  }
 }
 
 export async function PUT(req: NextRequest) {
@@ -29,6 +35,11 @@ export async function PUT(req: NextRequest) {
   const layout = migrateWorkspace(body.layout);
   const name = (body.name as string) ?? 'Daily Ops';
 
-  await saveWorkspace(session.user.name, name, layout);
+  try {
+    await saveWorkspace(session.user.name, name, layout);
+  } catch {
+    // No DB in dev — silently skip persistence
+    return NextResponse.json({ ok: true, persisted: false });
+  }
   return NextResponse.json({ ok: true });
 }

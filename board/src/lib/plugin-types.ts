@@ -3,6 +3,8 @@ import type { ComponentType } from 'react';
 export interface PluginManifest {
   id: string;                  // e.g., 'optimus.approval-queue'
   name: string;                // e.g., 'Approval Queue'
+  description?: string;        // one-line summary shown in plugin manager
+  author?: string;             // e.g., 'Optimus Core'
   version: string;             // semver
   category: 'workflow' | 'analytics' | 'system' | 'governance' | 'ops';
   dataDependencies: string[];  // hook names this plugin requires (e.g., ['useDrafts'])

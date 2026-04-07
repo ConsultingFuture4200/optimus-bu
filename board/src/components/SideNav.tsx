@@ -148,7 +148,7 @@ const navGroups: NavGroup[] = [
   },
 ];
 
-export default function SideNav() {
+export default function SideNav({ onOpenPluginManager }: { onOpenPluginManager?: () => void } = {}) {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [collapsed, setCollapsed] = useState(false);
@@ -210,8 +210,20 @@ export default function SideNav() {
         ))}
       </nav>
 
-      {/* Bottom: collapse toggle + user */}
+      {/* Bottom: plugins + collapse toggle + user */}
       <div className="border-t border-white/5 px-3 py-2 space-y-2">
+        {onOpenPluginManager && (
+          <button
+            onClick={onOpenPluginManager}
+            className={`w-full flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors ${collapsed ? 'justify-center' : ''}`}
+            title="Manage plugins"
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a2 2 0 110-4h1a1 1 0 001-1V7a1 1 0 011-1h3a1 1 0 001-1V4z" />
+            </svg>
+            {!collapsed && <span className="truncate">Plugins</span>}
+          </button>
+        )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="w-full flex items-center justify-center p-1.5 rounded-lg text-zinc-600 hover:text-zinc-400 hover:bg-white/5 transition-colors"

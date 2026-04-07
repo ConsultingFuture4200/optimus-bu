@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import SideNav from '@/components/SideNav';
+import PluginManager from '@/components/PluginManager';
 
 const GridArea = dynamic(() => import('./GridArea'), {
   ssr: false,
@@ -15,10 +17,13 @@ const GridArea = dynamic(() => import('./GridArea'), {
 });
 
 export default function PluginShell() {
+  const [pluginManagerOpen, setPluginManagerOpen] = useState(false);
+
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
-      <SideNav />
+      <SideNav onOpenPluginManager={() => setPluginManagerOpen(true)} />
       <GridArea />
+      <PluginManager open={pluginManagerOpen} onClose={() => setPluginManagerOpen(false)} />
     </div>
   );
 }
