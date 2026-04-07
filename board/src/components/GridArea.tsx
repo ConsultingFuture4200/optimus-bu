@@ -2,21 +2,22 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { GridLayout, useContainerWidth, type Layout, type LayoutItem } from 'react-grid-layout';
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
+// CSS loaded via globals.css (react-grid-layout + react-resizable styles)
 
 // Register stub plugins (side-effect import — triggers registerPlugin calls)
 import '@/plugins/stubs';
 
 import { getPlugin } from '@/lib/plugin-registry';
+import { useEnabledPlugins } from '@/hooks/usePluginRegistry';
 import PluginPane from './PluginPane';
 
 // Daily Ops default layout (D-10): Today Brief + Approval Queue top row, Agent Status full-width bottom
 // Layout = readonly LayoutItem[] in react-grid-layout v2
 const DAILY_OPS_DEFAULT_LAYOUT: Layout = [
-  { i: 'optimus.today-brief',    x: 0, y: 0, w: 6,  h: 8 },
-  { i: 'optimus.approval-queue', x: 6, y: 0, w: 6,  h: 8 },
-  { i: 'optimus.agent-status',   x: 0, y: 8, w: 12, h: 6 },
+  { i: 'optimus.today-brief',      x: 0, y: 0,  w: 6,  h: 8 },
+  { i: 'optimus.approval-queue',   x: 6, y: 0,  w: 6,  h: 8 },
+  { i: 'optimus.agent-status',     x: 0, y: 8,  w: 12, h: 6 },
+  { i: 'optimus.project-builder',  x: 0, y: 14, w: 12, h: 10 },
 ] as const;
 
 // Debounce hook — delays value propagation by `delay` ms.
@@ -34,6 +35,7 @@ export default function GridArea() {
   // useContainerWidth provides width measurement and a mounted flag (SHELL-07)
   const { width, mounted, containerRef } = useContainerWidth({ measureBeforeMount: true });
   const [layout, setLayout] = useState<Layout>(DAILY_OPS_DEFAULT_LAYOUT);
+  const enabledPlugins = useEnabledPlugins();
 
   // Guard: skip auto-save on first debounce trigger (before saved layout loads)
   const isInitialLoad = useRef(true);
@@ -86,6 +88,30 @@ export default function GridArea() {
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedLayout]);
+
+  // Sync layout when plugins are enabled/disabled
+  useEffect(() => {
+    const enabledIds = new Set(enabledPlugins.map((p) => p.manifest.id));
+    setLayout((prev) => {
+      // Remove panes for disabled plugins
+      const kept = prev.filter((item) => enabledIds.has(item.i));
+      // Add panes for newly enabled plugins not yet in layout
+      const existingIds = new Set(kept.map((item) => item.i));
+      const bottomY = kept.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+      let nextX = 0;
+      const added: LayoutItem[] = [];
+      for (const plugin of enabledPlugins) {
+        if (!existingIds.has(plugin.manifest.id)) {
+          const { w, h } = plugin.manifest.defaultSize;
+          added.push({ i: plugin.manifest.id, x: nextX, y: bottomY, w, h });
+          nextX += w;
+          if (nextX >= 12) nextX = 0;
+        }
+      }
+      if (added.length === 0 && kept.length === prev.length) return prev;
+      return [...kept, ...added];
+    });
+  }, [enabledPlugins]);
 
   const onLayoutChange = useCallback((newLayout: Layout) => {
     setLayout(newLayout);
